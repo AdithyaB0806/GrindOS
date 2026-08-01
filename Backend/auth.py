@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-
+EXPIRE = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
 SECRET_KEY=os.getenv("SECRET_KEY")
 ALGORITHM=os.getenv("ALGORITHM")
 EXPIRE=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
@@ -22,5 +22,9 @@ def create_access_token(data:dict):
         SECRET_KEY,
         algorithm=ALGORITHM
     )
+    
 
     return token
+print(os.getenv("SECRET_KEY"))
+print(os.getenv("ALGORITHM"))
+print(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
