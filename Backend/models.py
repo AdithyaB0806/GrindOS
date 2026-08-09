@@ -1,4 +1,4 @@
-from sqlalchemy import Column,Integer,String
+from sqlalchemy import Column,Integer,String,JSON, ForeignKey
 from Backend.database import Base
 
 class User(Base):
@@ -12,3 +12,14 @@ class User(Base):
     email=Column(String,unique=True,index=True)
 
     password=Column(String)
+
+class Assessment(Base):
+    __tablename__="assessments"
+
+    id=Column(Integer,primary_key=True,index=True)
+
+    user_id=Column(Integer,ForeignKey("users.id"))
+
+    answers=Column(JSON)
+
+
