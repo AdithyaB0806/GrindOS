@@ -23,3 +23,11 @@ class Assessment(Base):
     answers=Column(JSON)
 
 
+class Recommendation(Base):
+    __tablename__ = "recommendations"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+    result = Column(JSON)

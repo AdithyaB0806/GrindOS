@@ -229,6 +229,7 @@ function Assessment({ onDone }) {
   const [questions, setQuestions] = useState(null);
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({});
+  const [otherAnswers, setOtherAnswers] = useState({});
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -271,7 +272,24 @@ function Assessment({ onDone }) {
     setSubmitting(true);
     setError("");
     try {
-      await api.submitAssessment({ userId: user.id, answers, token });
+      const finalAnswers = { ...answers };
+
+    Object.keys(otherAnswers).forEach((key) => {
+  if (answers[key] === "Other" && otherAnswers[key]?.trim()) {
+    finalAnswers[key] = otherAnswers[key].trim();
+  }
+});
+
+await api.submitAssessment({
+  userId: user.id,
+  answers: finalAnswers,
+  token,
+});
+
+const recommendation = await api.generateRecommendation(token);
+
+onDone(recommendation);
+      
       onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -307,17 +325,40 @@ function Assessment({ onDone }) {
       <h2 className="assess-question">{q.question}</h2>
 
       <div className="assess-options">
-        {q.options.map((opt, i) => (
-          <button
-            key={opt}
-            className={`assess-option ${selected === opt ? "selected" : ""}`}
-            onClick={() => choose(opt)}
-          >
-            <span className="assess-option-key">{String.fromCharCode(65 + i)}</span>
-            {opt}
-          </button>
-        ))}
-      </div>
+  {q.options.map((opt, i) => (
+    <div key={opt}>
+      <button
+        type="button"
+        className={`assess-option ${
+          selected === opt ? "selected" : ""
+        }`}
+        onClick={() => choose(opt)}
+      >
+        <span className="assess-option-key">
+          {String.fromCharCode(65 + i)}
+        </span>
+
+        {opt}
+      </button>
+
+      {opt === "Other" && selected === "Other" && (
+        <input
+          className="gos-input"
+          type="text"
+          placeholder="Tell us more..."
+          value={otherAnswers[q.key] || ""}
+          onChange={(e) =>
+            setOtherAnswers((prev) => ({
+              ...prev,
+              [q.key]: e.target.value,
+            }))
+          }
+          autoFocus
+        />
+      )}
+    </div>
+  ))}
+</div>
 
       <div className="assess-nav">
         <button className="gos-btn" onClick={back} disabled={step === 0}>
@@ -327,7 +368,12 @@ function Assessment({ onDone }) {
           className="gos-btn gos-btn-primary"
           style={{ width: "auto" }}
           onClick={next}
-          disabled={!selected || submitting}
+          disabled={
+            !selected ||
+            submitting ||
+            (selected === "Other" &&
+            !otherAnswers[q.key]?.trim())
+          }
         >
           {submitting ? "SAVING…" : isLast ? "SUBMIT ASSESSMENT" : "NEXT"}
         </button>
@@ -339,6 +385,66 @@ function Assessment({ onDone }) {
 /* ============================================================
    Dashboard — profile readout + roadmap teaser
    ============================================================ */
+function RecommendationResult({ result }) {
+  if (!result) return null;
+
+  return (
+    <div className="gos-shell">
+      <div className="gos-eyebrow">AI ANALYSIS COMPLETE</div>
+
+      <h1 className="gos-title">
+        Your Career Profile
+      </h1>
+
+      <p className="gos-subtitle">
+        GrindOS analyzed your assessment answers.
+      </p>
+
+      {result.career_paths?.map((career, index) => (
+        <div className="gos-panel" key={career.title}>
+          <div className="terminal-head">
+            <span className="terminal-dot" />
+            CAREER_{index + 1}
+          </div>
+
+          <h2>{career.title}</h2>
+
+          <p>{career.fit_reason}</p>
+
+          <h3>Matching Skills</h3>
+          <ul>
+            {career.matching_skills?.map((skill) => (
+              <li key={skill}>{skill}</li>
+            ))}
+          </ul>
+
+          <h3>Skill Gaps</h3>
+          <ul>
+            {career.skill_gaps?.map((gap) => (
+              <li key={gap}>{gap}</li>
+            ))}
+          </ul>
+
+          <h3>Example Roles</h3>
+          <ul>
+            {career.example_roles?.map((role) => (
+              <li key={role}>{role}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+
+      <div className="gos-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" />
+          NEXT_SKILL
+        </div>
+
+        <h2>{result.next_skill_to_learn}</h2>
+      </div>
+    </div>
+  );
+}
 
 function Dashboard({ justSubmitted }) {
   const { user } = useAuth();
@@ -426,6 +532,7 @@ function Shell() {
   const { token, user, loading } = useAuth();
   const [view, setView] = useState("dashboard");
   const [justSubmitted, setJustSubmitted] = useState(false);
+  const [recommendation, setRecommendation] = useState(null);
 
   if (loading) {
     return (
@@ -445,11 +552,14 @@ function Shell() {
           <AuthScreen />
         ) : view === "assessment" ? (
           <Assessment
-            onDone={() => {
+            onDone={(result) => {
+              setRecommendation(result);
               setJustSubmitted(true);
-              setView("dashboard");
+              setView("results");
             }}
           />
+        ) : view === "results" ? (
+          <RecommendationResult result={recommendation} />
         ) : (
           <Dashboard justSubmitted={justSubmitted} />
         )}
@@ -457,7 +567,6 @@ function Shell() {
     </div>
   );
 }
-
 export default function App() {
   return (
     <AuthProvider>

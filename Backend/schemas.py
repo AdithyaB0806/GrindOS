@@ -20,3 +20,16 @@ class Token(BaseModel):
 
 class AssessmentSubmission(BaseModel):
     answers: Dict[str, str]
+
+from typing import List
+
+class CareerPath(BaseModel):
+    title: str
+    fit_reason: str
+    matching_skills: List[str]
+    skill_gaps: List[str]
+    example_roles: List[str]
+
+class RecommendationResponse(BaseModel):
+    career_paths: List[CareerPath]
+    next_skill_to_learn: str

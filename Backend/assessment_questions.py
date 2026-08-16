@@ -12,7 +12,9 @@ QUESTIONS = [
             "Design / Arts",
             "Languages / Communication",
             "Other"
-        ]
+        ],
+        
+        "allow_other": True
     },
     {
         "id": 2,
@@ -27,7 +29,8 @@ QUESTIONS = [
             "Reading or Researching",
             "Solving Puzzles",
             "Other"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 3,
@@ -41,7 +44,8 @@ QUESTIONS = [
             "Design Project",
             "Not Yet, But I Want To",
             "Other"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 4,
@@ -56,7 +60,8 @@ QUESTIONS = [
             "Protecting Systems from Hackers",
             "Managing Products",
             "Not Sure"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 5,
@@ -70,7 +75,8 @@ QUESTIONS = [
             "Business Problems",
             "Helping People Solve Problems",
             "A Mix of Everything"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 6,
@@ -84,7 +90,8 @@ QUESTIONS = [
             "Learning with a Mentor",
             "Practice Challenges",
             "Combination of Everything"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 7,
@@ -97,7 +104,8 @@ QUESTIONS = [
             "Large Team",
             "Leading a Team",
             "No Preference"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 8,
@@ -112,7 +120,8 @@ QUESTIONS = [
             "Cloud Computing",
             "Mobile Development",
             "Not Sure"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 9,
@@ -127,7 +136,8 @@ QUESTIONS = [
             "Freelancing",
             "Higher Studies",
             "Still Exploring"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 10,
@@ -139,7 +149,8 @@ QUESTIONS = [
             "5–10 Hours",
             "10–20 Hours",
             "More than 20 Hours"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 11,
@@ -154,7 +165,8 @@ QUESTIONS = [
             "Time Management",
             "Communication Skills",
             "Other"
-        ]
+        ],
+        "allow_other": True
     },
     {
         "id": 12,
@@ -169,6 +181,7 @@ QUESTIONS = [
             "Startup Ecosystem",
             "No Specific Inspiration",
             "Other"
-        ]
+        ],
+        "allow_other": True
     }
 ]

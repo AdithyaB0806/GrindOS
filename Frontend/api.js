@@ -67,6 +67,12 @@ export const api = {
       token,
       body: { answers },
     }),
+
+  generateRecommendation: (token) =>
+    request("/recommendations/generate", {
+      method: "POST",
+      token,
+    }),
 };
 
 export { API_BASE_URL };

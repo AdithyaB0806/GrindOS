@@ -7,3 +7,4 @@ python-jose
 python-dotenv
 python-multipart
 email-validator
+google-generativeai
