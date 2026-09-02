@@ -145,10 +145,10 @@ QUESTIONS = [
         "question": "How much time can you dedicate to learning each week?",
         "type": "single_choice",
         "options": [
-            "Less than 5 Hours",
-            "5–10 Hours",
-            "10–20 Hours",
-            "More than 20 Hours"
+            "Less than 2 Hours",
+            "3-4 Hours",
+            "5-6 Hours",
+            "More than 6 Hours"
         ],
         "allow_other": True
     },
