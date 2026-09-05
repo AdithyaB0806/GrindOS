@@ -4,12 +4,12 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
+from fastapi import Depends
 
 from Backend.database import get_db
 from Backend.models import Assessment, Recommendation, User
-from Backend.auth import get_current_user
 
 load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -18,7 +18,8 @@ router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 
 RECOMMENDATION_PROMPT = """
 You are a career advisor for computer science / tech students in India.
-
+Make sure you are aware of the Indian job market and the skills that are in demand. Check the user's answers to the assessment questions below and provide a recommendation which is relevant to the todays job market and for future career paths that fit them.
+Dont just give the usual technologies which were gone long before think like you are the one who is learning and you are the one who is going to get a job in the future. Give the most relevant and up to date career paths which are in demand in the market.
 Given this user's interest assessment answers (JSON below), return:
 1. Top 3 career paths that fit them
 2. For each path: why it fits, matching skills, skill gaps, and 3-5 example job roles to search for
@@ -58,12 +59,18 @@ def generate_recommendation(answers: dict) -> dict:
 
 @router.post("/generate")
 def get_recommendations(
-    current_user: User = Depends(get_current_user),
+    user_id: int,
     db: Session = Depends(get_db)
 ):
+    # confirm the user actually exists, so a bad id gives a clean 404
+    # instead of failing later with a confusing error
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
     assessment = (
         db.query(Assessment)
-        .filter(Assessment.user_id == current_user.id)
+        .filter(Assessment.user_id == user_id)
         .order_by(Assessment.id.desc())
         .first()
     )
@@ -73,7 +80,7 @@ def get_recommendations(
 
     existing = (
         db.query(Recommendation)
-        .filter(Recommendation.user_id == current_user.id)
+        .filter(Recommendation.user_id == user_id)
         .first()
     )
     if existing:
@@ -85,7 +92,7 @@ def get_recommendations(
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
 
     new_rec = Recommendation(
-        user_id=current_user.id,
+        user_id=user_id,
         result=result
     )
     db.add(new_rec)
@@ -93,3 +100,18 @@ def get_recommendations(
     db.refresh(new_rec)
 
     return new_rec.result
+
+
+@router.get("/")
+def get_saved_recommendation(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    recommendation = (
+        db.query(Recommendation)
+        .filter(Recommendation.user_id == user_id)
+        .first()
+    )
+    if not recommendation:
+        return {"message": "No recommendations available"}
+    return recommendation.result

@@ -68,10 +68,15 @@ export const api = {
       body: { answers },
     }),
 
-  generateRecommendation: (token) =>
+  generateRecommendation: (userId) =>
     request("/recommendations/generate", {
       method: "POST",
-      token,
+      query: { user_id: userId },
+    }),
+
+  getRecommendation: (userId) =>
+    request("/recommendations/", {
+      query: { user_id: userId },
     }),
 };
 

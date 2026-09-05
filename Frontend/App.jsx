@@ -286,11 +286,9 @@ await api.submitAssessment({
   token,
 });
 
-const recommendation = await api.generateRecommendation(token);
+const recommendation = await api.generateRecommendation(user.id);
 
 onDone(recommendation);
-      
-      onDone();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -385,7 +383,8 @@ onDone(recommendation);
 /* ============================================================
    Dashboard — profile readout + roadmap teaser
    ============================================================ */
-function RecommendationResult({ result }) {
+
+   function RecommendationResult({ result, onRetake }) {
   if (!result) return null;
 
   return (
@@ -442,11 +441,15 @@ function RecommendationResult({ result }) {
 
         <h2>{result.next_skill_to_learn}</h2>
       </div>
+
+      <button className="gos-btn" onClick={onRetake}>
+        RETAKE ASSESSMENT
+      </button>
     </div>
   );
 }
 
-function Dashboard({ justSubmitted }) {
+function Dashboard({ justSubmitted, hasRecommendation, checkingRec, onViewAnalysis }) {
   const { user } = useAuth();
 
   return (
@@ -520,6 +523,32 @@ function Dashboard({ justSubmitted }) {
           </div>
         </div>
       </div>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> ai_analysis
+        </div>
+
+        {checkingRec ? (
+          <div className="gos-loading">
+            <span className="gos-spinner" />
+            Checking for a saved analysis…
+          </div>
+        ) : hasRecommendation ? (
+          <>
+            <p className="gos-subtitle" style={{ marginBottom: 16 }}>
+              Your AI career analysis from your last assessment is ready.
+            </p>
+            <button className="gos-btn gos-btn-primary" onClick={onViewAnalysis}>
+              VIEW AI ANALYSIS
+            </button>
+          </>
+        ) : (
+          <p className="gos-subtitle" style={{ marginBottom: 0 }}>
+            Complete the skill assessment to unlock your AI career analysis.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -533,6 +562,28 @@ function Shell() {
   const [view, setView] = useState("dashboard");
   const [justSubmitted, setJustSubmitted] = useState(false);
   const [recommendation, setRecommendation] = useState(null);
+  const [checkingRec, setCheckingRec] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    setCheckingRec(true);
+    api
+      .getRecommendation(user.id)
+      .then((data) => {
+        if (cancelled) return;
+        if (data && data.career_paths) setRecommendation(data);
+      })
+      .catch(() => {
+        /* no saved recommendation yet */
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingRec(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   if (loading) {
     return (
@@ -559,9 +610,17 @@ function Shell() {
             }}
           />
         ) : view === "results" ? (
-          <RecommendationResult result={recommendation} />
+          <RecommendationResult
+            result={recommendation}
+            onRetake={() => setView("assessment")}
+          />
         ) : (
-          <Dashboard justSubmitted={justSubmitted} />
+          <Dashboard
+            justSubmitted={justSubmitted}
+            hasRecommendation={!!recommendation}
+            checkingRec={checkingRec}
+            onViewAnalysis={() => setView("results")}
+          />
         )}
       </div>
     </div>

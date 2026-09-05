@@ -1,11 +1,10 @@
-from unittest import result
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from Backend.assessment_questions import QUESTIONS
 from Backend.database import get_db
-from Backend.models import Assessment
+from Backend.models import Assessment, Recommendation
 from Backend.schemas import AssessmentSubmission
+
 router = APIRouter(prefix="/assessment", tags=["Assessment"])
 
 @router.get("/questions")
@@ -18,25 +17,34 @@ def submit_assessment(
     user_id: int,
     db: Session = Depends(get_db)
 ):
-    result = Assessment(
-        user_id=user_id,
-        answers=data.answers
-    )
+    existing = db.query(Assessment).filter(Assessment.user_id == user_id).first()
 
-    db.add(result)
+    if existing:
+        existing.answers = data.answers
+        db.commit()
+        db.refresh(existing)
+        saved = existing
+    else:
+        saved = Assessment(user_id=user_id, answers=data.answers)
+        db.add(saved)
+        db.commit()
+        db.refresh(saved)
+
+    # answers changed -> any old recommendation is stale, clear it so the
+    # next call to /recommendations/generate produces a fresh one
+    db.query(Recommendation).filter(Recommendation.user_id == user_id).delete()
     db.commit()
-    db.refresh(result)
 
     return {
         "message": "Assessment submitted successfully",
-        "answers": result.answers
+        "answers": saved.answers
     }
-
-    db.add(result)
-    db.commit()
-    db.refresh(result)
-
-    return {
-        "message": "Assessment submitted successfully",
-        "answers": result.answers
-    }
+@router.get("/recommendations")
+def get_recommendations(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    recommendation = db.query(Recommendation).filter(Recommendation.user_id == user_id).first()
+    if not recommendation:
+        return {"message": "No recommendations available"}
+    return recommendation
