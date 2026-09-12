@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from Backend.assessment_questions import QUESTIONS
 from Backend.database import get_db
-from Backend.models import Assessment, Recommendation
+from Backend.models import Assessment, Recommendation, User
 from Backend.schemas import AssessmentSubmission
+from Backend.auth import get_current_user
 
 router = APIRouter(prefix="/assessment", tags=["Assessment"])
 
@@ -14,10 +15,10 @@ def get_assessment_questions():
 @router.post("/submit")
 def submit_assessment(
     data: AssessmentSubmission,
-    user_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    existing = db.query(Assessment).filter(Assessment.user_id == user_id).first()
+    existing = db.query(Assessment).filter(Assessment.user_id == current_user.id).first()
 
     if existing:
         existing.answers = data.answers
@@ -25,26 +26,27 @@ def submit_assessment(
         db.refresh(existing)
         saved = existing
     else:
-        saved = Assessment(user_id=user_id, answers=data.answers)
+        saved = Assessment(user_id=current_user.id, answers=data.answers)
         db.add(saved)
         db.commit()
         db.refresh(saved)
 
     # answers changed -> any old recommendation is stale, clear it so the
     # next call to /recommendations/generate produces a fresh one
-    db.query(Recommendation).filter(Recommendation.user_id == user_id).delete()
+    db.query(Recommendation).filter(Recommendation.user_id == current_user.id).delete()
     db.commit()
 
     return {
         "message": "Assessment submitted successfully",
         "answers": saved.answers
     }
+
 @router.get("/recommendations")
 def get_recommendations(
-    user_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    recommendation = db.query(Recommendation).filter(Recommendation.user_id == user_id).first()
+    recommendation = db.query(Recommendation).filter(Recommendation.user_id == current_user.id).first()
     if not recommendation:
         return {"message": "No recommendations available"}
     return recommendation

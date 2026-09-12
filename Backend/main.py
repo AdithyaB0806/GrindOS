@@ -1,18 +1,26 @@
 from fastapi import FastAPI
-
 from Backend.database import Base, engine
 from Backend.routes import router
 from Backend.assessment import router as assessment_router
 from Backend.ai_recomendation import router as recommendation_router
+from Backend.roadmap import router as roadmap_router
+from Backend.skills import router as skills_router
+from Backend.jobs import router as jobs_router
+from Backend.interview import router as interview_router
+from Backend.dashboard import router as dashboard_router
 from fastapi.middleware.cors import CORSMiddleware
 
 
 
 app = FastAPI()
 app.include_router(recommendation_router)
-
 app.include_router(assessment_router)
 app.include_router(router)
+app.include_router(roadmap_router)
+app.include_router(skills_router)
+app.include_router(jobs_router)
+app.include_router(interview_router)
+app.include_router(dashboard_router)
 
 Base.metadata.create_all(bind=engine)
 

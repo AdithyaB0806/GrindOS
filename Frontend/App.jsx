@@ -72,7 +72,100 @@ function BrandMark() {
   return (
     <div className="gos-brand">
       <span className="gos-brand-mark" />
-      GRINDOS <small>v0.1 — career OS</small>
+       GRINDOS <small>career OS</small>
+    </div>
+  );
+}
+
+function youtubeSearch(query) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+}
+
+
+/* ---------- circuit track: aggregate progress readout ---------- */
+
+function CircuitTrack({ percent = 0, label }) {
+  const clamped = Math.max(0, Math.min(100, percent));
+  return (
+    <div className="circuit-track-wrap">
+      {label && <div className="circuit-track-label">{label}</div>}
+      <div className="circuit-track">
+        <div className="circuit-track-fill" style={{ width: `${clamped}%` }}>
+          <span className="circuit-track-head" />
+        </div>
+      </div>
+      <div className="circuit-track-readout">
+        <strong>{clamped}%</strong> grind complete
+      </div>
+    </div>
+  );
+}
+
+/* ---------- stage rail: per-item status control ---------- */
+
+const TRACKED_STAGES = ["learning", "practicing", "completed"];
+const STAGE_LABEL = {
+  not_started: "NOT STARTED",
+  learning: "LEARNING",
+  practicing: "PRACTICING",
+  completed: "COMPLETED",
+};
+const STAGE_ORDER = ["not_started", ...TRACKED_STAGES];
+
+const JOB_STATUSES = ["wishlist", "applied", "oa", "interview", "offer", "rejected"];
+const JOB_STATUS_LABEL = {
+  wishlist: "WISHLIST",
+  applied: "APPLIED",
+  oa: "OA / TEST",
+  interview: "INTERVIEW",
+  offer: "OFFER",
+  rejected: "REJECTED",
+};
+const JOB_SOURCES = ["LinkedIn", "Naukri", "Internshala", "Referral", "Career page", "Twitter / X", "Other"];
+
+const INTERVIEW_STAGES = ["practicing", "nailed"];
+const INTERVIEW_STAGE_ORDER = ["not_started", ...INTERVIEW_STAGES];
+const INTERVIEW_STAGE_LABEL = {
+  not_started: "NOT STARTED",
+  practicing: "PRACTICING",
+  nailed: "NAILED",
+};
+const INTERVIEW_CATEGORY_LABEL = {
+  dsa: "DSA",
+  system_design: "SYSTEM DESIGN",
+  domain: "ROLE / DOMAIN",
+  behavioral: "BEHAVIORAL",
+  hr: "HR",
+};
+
+function youtubeSearchUrl(query) {
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+}
+
+function StageRail({ status, onChange, disabled }) {
+  const currentIndex = STAGE_ORDER.indexOf(status);
+
+  return (
+    <div className="stage-rail">
+      <div className="stage-ticks">
+        {TRACKED_STAGES.map((stage, i) => {
+          const stageIndex = i + 1;
+          const filled = stageIndex < currentIndex;
+          const active = stageIndex === currentIndex;
+          return (
+            <button
+              key={stage}
+              type="button"
+              title={STAGE_LABEL[stage]}
+              aria-label={`Set status to ${STAGE_LABEL[stage]}`}
+              className={`stage-tick ${filled ? "filled" : ""} ${active ? "active" : ""}`}
+              disabled={disabled}
+              onClick={() => onChange(active ? "not_started" : stage)}
+            />
+          );
+        })}
+      </div>
+      <span className={`stage-label stage-label-${status}`}>{STAGE_LABEL[status] || status}</span>
     </div>
   );
 }
@@ -96,6 +189,36 @@ function Navbar({ view, setView }) {
             onClick={() => setView("assessment")}
           >
             ASSESSMENT
+          </button>
+          <button
+            className={`gos-nav-btn ${view === "roadmap" ? "active" : ""}`}
+            onClick={() => setView("roadmap")}
+          >
+            ROADMAP
+          </button>
+          <button
+            className={`gos-nav-btn ${view === "skills" ? "active" : ""}`}
+            onClick={() => setView("skills")}
+          >
+            SKILLS
+          </button>
+          <button
+            className={`gos-nav-btn ${view === "jobs" ? "active" : ""}`}
+            onClick={() => setView("jobs")}
+          >
+            JOBS
+          </button>
+           <button
+            className={`gos-nav-btn ${view === "jobs" ? "active" : ""}`}
+            onClick={() => setView("jobs")}
+          >
+            JOBS
+          </button>
+          <button
+            className={`gos-nav-btn ${view === "interview" ? "active" : ""}`}
+            onClick={() => setView("interview")}
+          >
+            INTERVIEW
           </button>
         </div>
       )}
@@ -225,7 +348,7 @@ function AuthScreen() {
    ============================================================ */
 
 function Assessment({ onDone }) {
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const [questions, setQuestions] = useState(null);
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -274,21 +397,17 @@ function Assessment({ onDone }) {
     try {
       const finalAnswers = { ...answers };
 
-    Object.keys(otherAnswers).forEach((key) => {
-  if (answers[key] === "Other" && otherAnswers[key]?.trim()) {
-    finalAnswers[key] = otherAnswers[key].trim();
-  }
-});
+      Object.keys(otherAnswers).forEach((key) => {
+        if (answers[key] === "Other" && otherAnswers[key]?.trim()) {
+          finalAnswers[key] = otherAnswers[key].trim();
+        }
+      });
 
-await api.submitAssessment({
-  userId: user.id,
-  answers: finalAnswers,
-  token,
-});
+      await api.submitAssessment({ answers: finalAnswers, token });
 
-const recommendation = await api.generateRecommendation(user.id);
+      const recommendation = await api.generateRecommendation(token);
 
-onDone(recommendation);
+      onDone(recommendation);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -323,40 +442,35 @@ onDone(recommendation);
       <h2 className="assess-question">{q.question}</h2>
 
       <div className="assess-options">
-  {q.options.map((opt, i) => (
-    <div key={opt}>
-      <button
-        type="button"
-        className={`assess-option ${
-          selected === opt ? "selected" : ""
-        }`}
-        onClick={() => choose(opt)}
-      >
-        <span className="assess-option-key">
-          {String.fromCharCode(65 + i)}
-        </span>
+        {q.options.map((opt, i) => (
+          <div key={opt}>
+            <button
+              type="button"
+              className={`assess-option ${selected === opt ? "selected" : ""}`}
+              onClick={() => choose(opt)}
+            >
+              <span className="assess-option-key">{String.fromCharCode(65 + i)}</span>
+              {opt}
+            </button>
 
-        {opt}
-      </button>
-
-      {opt === "Other" && selected === "Other" && (
-        <input
-          className="gos-input"
-          type="text"
-          placeholder="Tell us more..."
-          value={otherAnswers[q.key] || ""}
-          onChange={(e) =>
-            setOtherAnswers((prev) => ({
-              ...prev,
-              [q.key]: e.target.value,
-            }))
-          }
-          autoFocus
-        />
-      )}
-    </div>
-  ))}
-</div>
+            {opt === "Other" && selected === "Other" && (
+              <input
+                className="gos-input"
+                type="text"
+                placeholder="Tell us more..."
+                value={otherAnswers[q.key] || ""}
+                onChange={(e) =>
+                  setOtherAnswers((prev) => ({
+                    ...prev,
+                    [q.key]: e.target.value,
+                  }))
+                }
+                autoFocus
+              />
+            )}
+          </div>
+        ))}
+      </div>
 
       <div className="assess-nav">
         <button className="gos-btn" onClick={back} disabled={step === 0}>
@@ -369,8 +483,7 @@ onDone(recommendation);
           disabled={
             !selected ||
             submitting ||
-            (selected === "Other" &&
-            !otherAnswers[q.key]?.trim())
+            (selected === "Other" && !otherAnswers[q.key]?.trim())
           }
         >
           {submitting ? "SAVING…" : isLast ? "SUBMIT ASSESSMENT" : "NEXT"}
@@ -384,20 +497,16 @@ onDone(recommendation);
    Dashboard — profile readout + roadmap teaser
    ============================================================ */
 
-   function RecommendationResult({ result, onRetake }) {
+function RecommendationResult({ result, onRetake }) {
   if (!result) return null;
 
   return (
     <div className="gos-shell">
       <div className="gos-eyebrow">AI ANALYSIS COMPLETE</div>
 
-      <h1 className="gos-title">
-        Your Career Profile
-      </h1>
+      <h1 className="gos-title">Your Career Profile</h1>
 
-      <p className="gos-subtitle">
-        GrindOS analyzed your assessment answers.
-      </p>
+      <p className="gos-subtitle">GrindOS analyzed your assessment answers.</p>
 
       {result.career_paths?.map((career, index) => (
         <div className="gos-panel" key={career.title}>
@@ -449,104 +558,610 @@ onDone(recommendation);
   );
 }
 
-function Dashboard({ justSubmitted, hasRecommendation, checkingRec, onViewAnalysis }) {
-  const { user } = useAuth();
+function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onGoJobs, onGoInterview, onGoSkills, onGoAssessment }) {
+  const { user, token } = useAuth();
+  const [summary, setSummary] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .getDashboardSummary(token)
+      .then(setSummary)
+      .catch((err) => setError(errorMessage(err)));
+  }, [token, refreshKey]);
+
+  if (!summary && !error) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading command center…
+      </div>
+    );
+  }
+
+  const skills = summary?.skills;
+  const roadmap = summary?.roadmap;
+  const jobs = summary?.jobs;
+  const interview = summary?.interview;
+  const rec = summary?.recommendation;
+  const firstName = user.name.split(" ")[0];
 
   return (
-    <div className="gos-shell">
+    <div className="gos-shell gos-shell-wide">
       <div>
-        <div className="gos-eyebrow">System status</div>
-        <h1 className="gos-title">Welcome back, {user.name.split(" ")[0]}</h1>
+        <div className="gos-eyebrow">Command center</div>
+        <h1 className="gos-title">Welcome back, {firstName}</h1>
         <p className="gos-subtitle">
           {justSubmitted
-            ? "Assessment logged. Your roadmap builds on these answers as more modules come online."
-            : "Here's where your GrindOS profile stands right now."}
+            ? "Assessment logged. Your career path, roadmap, and prep modules are ready to run."
+            : roadmap
+              ? `Tracking ${roadmap.career_title}. Keep the circuit moving.`
+              : "Live readout of your grind — assessment, roadmap, jobs, and interviews."}
         </p>
+      </div>
+
+      <Alert>{error}</Alert>
+
+      <div className="dash-stats">
+        <button className="dash-stat gos-panel" type="button" onClick={onGoRoadmap}>
+          <span className="dash-stat-key">ROADMAP</span>
+          <span className="dash-stat-val">{roadmap ? `${roadmap.progress_percent}%` : "—"}</span>
+          <span className="dash-stat-sub">
+            {roadmap ? `${roadmap.completed_items}/${roadmap.total_items} items` : "Not generated"}
+          </span>
+        </button>
+        <button className="dash-stat gos-panel" type="button" onClick={onGoSkills}>
+          <span className="dash-stat-key">SKILLS</span>
+          <span className="dash-stat-val">{skills ? `${skills.average_percent}%` : "0%"}</span>
+          <span className="dash-stat-sub">
+            {skills ? `${skills.completed_skills}/${skills.total_skills} completed` : "None tracked"}
+          </span>
+        </button>
+        <button className="dash-stat gos-panel" type="button" onClick={onGoJobs}>
+          <span className="dash-stat-key">JOB PIPELINE</span>
+          <span className="dash-stat-val">{jobs?.pipeline ?? 0}</span>
+          <span className="dash-stat-sub">{jobs?.total ?? 0} tracked applications</span>
+        </button>
+        <button className="dash-stat gos-panel" type="button" onClick={onGoInterview}>
+          <span className="dash-stat-key">INTERVIEW</span>
+          <span className="dash-stat-val">{interview?.total ? `${interview.progress_percent}%` : "—"}</span>
+          <span className="dash-stat-sub">
+            {interview?.total ? `${interview.nailed}/${interview.total} nailed` : "Prep not generated"}
+          </span>
+        </button>
       </div>
 
       <div className="gos-grid-2">
         <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> profile.json
+            <span className="terminal-dot" /> next.grind
           </div>
-          <div className="terminal-row">
-            <span className="terminal-row-key">id</span>
-            <span className="terminal-row-val">{user.id}</span>
-          </div>
-          <div className="terminal-row">
-            <span className="terminal-row-key">name</span>
-            <span className="terminal-row-val">{user.name}</span>
-          </div>
-          <div className="terminal-row">
-            <span className="terminal-row-key">email</span>
-            <span className="terminal-row-val">{user.email}</span>
-          </div>
-          <div className="terminal-row">
-            <span className="terminal-row-key">status</span>
-            <span className="terminal-row-val">
-              active
-              <span className="terminal-cursor" />
-            </span>
-          </div>
+          {roadmap?.next_item ? (
+            <>
+              <div className="dash-next-phase">{roadmap.next_item.phase_title}</div>
+              <h2 className="dash-next-title">{roadmap.next_item.title}</h2>
+              <p className="gos-empty-note">
+                Open the roadmap and click this item for how to learn it — channels, docs, and a practice project.
+              </p>
+              <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={onGoRoadmap}>
+                OPEN ROADMAP
+              </button>
+            </>
+          ) : rec ? (
+            <>
+              <h2 className="dash-next-title">{summary.next_skill_to_learn || rec.next_skill_to_learn}</h2>
+              <p className="gos-empty-note">Generate a roadmap to break this into a week-by-week path.</p>
+              <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={onGoRoadmap}>
+                GENERATE ROADMAP
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="gos-empty-note">Take the assessment so GrindOS can pick your first move.</p>
+              <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={onGoAssessment}>
+                START ASSESSMENT
+              </button>
+            </>
+          )}
         </div>
 
-        <div className="gos-panel roadmap-card">
+        <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> roadmap.modules
+            <span className="terminal-dot" /> career.paths
           </div>
-          <div className="roadmap-item">
-            <span className="roadmap-item-status live">LIVE</span>
-            <div>
-              <div className="roadmap-item-title">Skill assessment</div>
-              <div className="roadmap-item-desc">
-                Baseline read on interests, strengths, and target roles.
-              </div>
-            </div>
+          {rec?.career_paths?.length ? (
+            <>
+              {rec.career_paths.slice(0, 3).map((career, i) => (
+                <div className="dash-path-row" key={career.title}>
+                  <span className="dash-path-idx">{String(i + 1).padStart(2, "0")}</span>
+                  <div>
+                    <div className="roadmap-item-title">{career.title}</div>
+                    <div className="roadmap-item-desc">{career.example_roles?.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
+              ))}
+              <button className="gos-btn gos-btn-ghost" onClick={onViewAnalysis}>
+                View full analysis →
+              </button>
+            </>
+          ) : (
+            <p className="gos-empty-note" style={{ marginBottom: 0 }}>
+              No AI analysis yet. Complete the assessment to unlock career paths.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="gos-grid-2">
+        <div className="gos-panel terminal-panel">
+          <div className="terminal-head">
+            <span className="terminal-dot" /> jobs.recent
           </div>
-          <div className="roadmap-item">
-            <span className="roadmap-item-status">SOON</span>
-            <div>
-              <div className="roadmap-item-title">AI-generated roadmap</div>
-              <div className="roadmap-item-desc">
-                Personalized learning path from your assessment answers.
-              </div>
-            </div>
+          {jobs?.recent?.length ? (
+            <>
+              {jobs.recent.map((job) => (
+                <div className="terminal-row" key={job.id}>
+                  <span className="terminal-row-key">
+                    {job.company}
+                    <span className="dash-job-role"> — {job.role}</span>
+                  </span>
+                  <span className={`job-chip job-chip-${job.status}`}>
+                    {JOB_STATUS_LABEL[job.status] || job.status}
+                  </span>
+                </div>
+              ))}
+              <button className="gos-btn gos-btn-ghost" onClick={onGoJobs}>
+                Open job tracker →
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="gos-empty-note">No applications yet. Track internships and roles as you apply.</p>
+              <button className="gos-btn" onClick={onGoJobs}>
+                ADD A JOB
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="gos-panel terminal-panel">
+          <div className="terminal-head">
+            <span className="terminal-dot" /> skills.circuit
           </div>
-          <div className="roadmap-item">
-            <span className="roadmap-item-status">SOON</span>
-            <div>
-              <div className="roadmap-item-title">Project & interview prep</div>
-              <div className="roadmap-item-desc">
-                Portfolio recommendations and mock interviews.
+          <CircuitTrack percent={skills?.average_percent ?? 0} label="Average skill progress" />
+          {skills?.next_skill && (
+            <p className="gos-empty-note" style={{ marginTop: 14, marginBottom: 0 }}>
+              Next skill in the queue: <strong>{skills.next_skill}</strong>
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Roadmap — phase-based learning path with per-item status
+   ============================================================ */
+
+function LearningGuide({ payload, loading, error, onClose }) {
+  const guide = payload?.guide;
+
+  return (
+    <div className="gos-panel terminal-panel guide-panel">
+      <div className="terminal-head">
+        <span className="terminal-dot" /> learn.guide
+        <button className="gos-btn gos-btn-ghost guide-close" type="button" onClick={onClose}>
+          CLOSE
+        </button>
+      </div>
+      <h2 className="guide-title">{payload?.title || "Loading…"}</h2>
+      {payload?.phase_title && <div className="dash-next-phase">{payload.phase_title}</div>}
+      <Alert>{error}</Alert>
+      {loading && (
+        <div className="gos-loading">
+          <span className="gos-spinner" /> Building a learning brief…
+        </div>
+      )}
+      {guide && (
+        <>
+          <p className="guide-summary">{guide.summary}</p>
+          {guide.learn_this?.length > 0 && (
+            <>
+              <h3 className="guide-h">What to learn</h3>
+              <ul className="guide-list">
+                {guide.learn_this.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {guide.practice && (
+            <>
+              <h3 className="guide-h">How to practice</h3>
+              <p className="guide-summary">{guide.practice}</p>
+            </>
+          )}
+          {guide.youtube?.length > 0 && (
+            <>
+              <h3 className="guide-h">YouTube channels</h3>
+              <div className="guide-cards">
+                {guide.youtube.map((yt) => (
+                  <a
+                    key={`${yt.channel}-${yt.search_query}`}
+                    className="guide-card"
+                    href={youtubeSearch(yt.search_query || yt.channel)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <div className="guide-card-name">{yt.channel}</div>
+                    <div className="guide-card-why">{yt.focus}</div>
+                    <div className="guide-card-cta">Search on YouTube →</div>
+                  </a>
+                ))}
               </div>
+            </>
+          )}
+          {guide.resources?.length > 0 && (
+            <>
+              <h3 className="guide-h">Docs & sites</h3>
+              <div className="guide-cards">
+                {guide.resources.map((res) => (
+                  <a
+                    key={res.name}
+                    className="guide-card"
+                    href={res.url || "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <div className="guide-card-name">{res.name}</div>
+                    <div className="guide-card-why">{res.why}</div>
+                  </a>
+                ))}
+              </div>
+            </>
+          )}
+          {guide.project_idea && (
+            <>
+              <h3 className="guide-h">Project to lock it in</h3>
+              <p className="guide-summary">{guide.project_idea}</p>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function RoadmapView({ hasRecommendation, onSkillsSynced }) {
+  const { token } = useAuth();
+  const [roadmap, setRoadmap] = useState(undefined); // undefined = loading, null = none yet
+  const [error, setError] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [updatingId, setUpdatingId] = useState(null);
+  const [openItem, setOpenItem] = useState(null);
+  const [guidePayload, setGuidePayload] = useState(null);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideError, setGuideError] = useState("");
+
+  const load = () => {
+    api
+      .getRoadmap(token)
+      .then((data) => setRoadmap(data && data.phases ? data : null))
+      .catch((err) => setError(errorMessage(err)));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const generate = async (regenerate) => {
+    if (
+      regenerate &&
+      !window.confirm(
+        "Regenerate your roadmap? This rebuilds every phase from scratch — current item progress on this roadmap will be lost."
+      )
+    ) {
+      return;
+    }
+    setGenerating(true);
+    setError("");
+    try {
+      const data = await api.generateRoadmap({ token, regenerate });
+      setRoadmap(data);
+      setOpenItem(null);
+      setGuidePayload(null);
+      onSkillsSynced?.();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const setItemStatus = async (itemId, status) => {
+    setUpdatingId(itemId);
+    setRoadmap((r) =>
+      r
+        ? {
+            ...r,
+            phases: r.phases.map((p) => ({
+              ...p,
+              items: p.items.map((it) => (it.id === itemId ? { ...it, status } : it)),
+            })),
+          }
+        : r
+    );
+    try {
+      await api.updateRoadmapItemStatus({ token, itemId, status });
+      load(); // resync progress_percent from the server
+      onSkillsSynced?.();
+    } catch (err) {
+      setError(errorMessage(err));
+      load();
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const openGuide = async (item) => {
+    if (openItem?.id === item.id) {
+      setOpenItem(null);
+      return;
+    }
+    setOpenItem(item);
+    setGuideError("");
+    setGuidePayload(null);
+    setGuideLoading(true);
+    try {
+      const data = await api.getRoadmapItemGuide({ token, itemId: item.id });
+      setGuidePayload(data);
+    } catch (err) {
+      setGuideError(errorMessage(err));
+    } finally {
+      setGuideLoading(false);
+    }
+  };
+
+  if (roadmap === undefined) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading roadmap…
+      </div>
+    );
+  }
+
+  if (!roadmap) {
+    return (
+      <div className="gos-shell">
+        <div>
+          <div className="gos-eyebrow">Learning path</div>
+          <h1 className="gos-title">No roadmap yet</h1>
+          <p className="gos-subtitle">
+            {hasRecommendation
+              ? "Generate a phase-by-phase roadmap built from your AI career analysis."
+              : "Complete the assessment first — your roadmap is built from your AI career analysis."}
+          </p>
+        </div>
+
+        <Alert>{error}</Alert>
+
+        <div className="gos-panel terminal-panel">
+          <div className="terminal-head">
+            <span className="terminal-dot" /> roadmap.generate
+          </div>
+          <p className="gos-empty-note" style={{ marginBottom: 18 }}>
+            {hasRecommendation
+              ? "This builds an ordered set of phases from foundational to job-ready, ending in a project/portfolio phase — matched to your weekly study time and career goal."
+              : "Head to the dashboard, run the assessment, and come back once your AI analysis is ready."}
+          </p>
+          <button
+            className="gos-btn gos-btn-primary"
+            style={{ width: "auto" }}
+            disabled={!hasRecommendation || generating}
+            onClick={() => generate(false)}
+          >
+            {generating ? "BUILDING…" : "GENERATE ROADMAP"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="gos-shell">
+      <div>
+        <div className="gos-eyebrow">Learning path</div>
+        <h1 className="gos-title">{roadmap.career_title}</h1>
+        <p className="gos-subtitle">
+          Click an item for how to learn it (channels, docs, a project). Use the ticks to mark progress — it syncs to skills.
+        </p>
+      </div>
+
+      <Alert>{error}</Alert>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> roadmap.progress
+        </div>
+        <CircuitTrack percent={roadmap.progress_percent} />
+        <div style={{ marginTop: 16, textAlign: "right" }}>
+          <button className="gos-btn gos-btn-ghost" onClick={() => generate(true)} disabled={generating}>
+            {generating ? "REBUILDING…" : "REGENERATE ROADMAP"}
+          </button>
+        </div>
+      </div>
+
+      {roadmap.phases.map((phase) => (
+        <div className="gos-panel phase-block" key={phase.phase_number}>
+          <div className="phase-head">
+            <span className="phase-num">PHASE {String(phase.phase_number).padStart(2, "0")}</span>
+            <span className="phase-title-text">{phase.phase_title}</span>
+          </div>
+          {phase.items.map((item) => (
+            <div
+              className={`roadmap-row ${openItem?.id === item.id ? "is-open" : ""}`}
+              key={item.id}
+            >
+              <button
+                type="button"
+                className="roadmap-row-title-btn"
+                onClick={() => openGuide(item)}
+              >
+                {item.title}
+              </button>
+              <StageRail
+                status={item.status}
+                disabled={updatingId === item.id}
+                onChange={(status) => setItemStatus(item.id, status)}
+              />
             </div>
+          ))}
+        </div>
+      ))}
+
+      {openItem && (
+        <LearningGuide
+          payload={guidePayload}
+          loading={guideLoading}
+          error={guideError}
+          onClose={() => setOpenItem(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   Skills — dashboard summary + full tracked list + manual add
+   ============================================================ */
+
+function SkillsView({ refreshKey }) {
+  const { token } = useAuth();
+  const [skills, setSkills] = useState(undefined); // undefined = loading
+  const [dash, setDash] = useState(null);
+  const [error, setError] = useState("");
+  const [newSkill, setNewSkill] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [updatingId, setUpdatingId] = useState(null);
+
+  const load = () => {
+    Promise.all([api.listSkills(token), api.getSkillsDashboard(token)])
+      .then(([list, dashboard]) => {
+        setSkills(list);
+        setDash(dashboard);
+      })
+      .catch((err) => setError(errorMessage(err)));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+
+  const addSkill = async (e) => {
+    e.preventDefault();
+    if (!newSkill.trim()) return;
+    setAdding(true);
+    setError("");
+    try {
+      await api.addSkill({ token, name: newSkill.trim() });
+      setNewSkill("");
+      load();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const setSkillStatus = async (skillId, status) => {
+    setUpdatingId(skillId);
+    setSkills((list) => list.map((s) => (s.id === skillId ? { ...s, status } : s)));
+    try {
+      await api.updateSkillStatus({ token, skillId, status });
+      load();
+    } catch (err) {
+      setError(errorMessage(err));
+      load();
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  if (skills === undefined) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading skills…
+      </div>
+    );
+  }
+
+  return (
+    <div className="gos-shell">
+      <div>
+        <div className="gos-eyebrow">Skill tracker</div>
+        <h1 className="gos-title">Skills</h1>
+        <p className="gos-subtitle">
+          Roadmap items land here automatically. Add anything else you're picking up on your own.
+        </p>
+      </div>
+
+      <Alert>{error}</Alert>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> skills.summary
+        </div>
+        <CircuitTrack percent={dash?.average_percent ?? 0} />
+        <div className="stat-inline-row">
+          <div className="stat-inline">
+            <span className="stat-inline-val">{dash?.total_skills ?? 0}</span>
+            <span className="stat-inline-key">TRACKED</span>
+          </div>
+          <div className="stat-inline">
+            <span className="stat-inline-val">{dash?.completed_skills ?? 0}</span>
+            <span className="stat-inline-key">COMPLETED</span>
           </div>
         </div>
       </div>
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> ai_analysis
+          <span className="terminal-dot" /> add_skill
         </div>
+        <form className="skill-add-form" onSubmit={addSkill}>
+          <input
+            className="gos-input"
+            placeholder="e.g. Docker, System Design, DSA…"
+            value={newSkill}
+            onChange={(e) => setNewSkill(e.target.value)}
+          />
+          <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} disabled={adding || !newSkill.trim()}>
+            {adding ? "ADDING…" : "ADD"}
+          </button>
+        </form>
+      </div>
 
-        {checkingRec ? (
-          <div className="gos-loading">
-            <span className="gos-spinner" />
-            Checking for a saved analysis…
-          </div>
-        ) : hasRecommendation ? (
-          <>
-            <p className="gos-subtitle" style={{ marginBottom: 16 }}>
-              Your AI career analysis from your last assessment is ready.
-            </p>
-            <button className="gos-btn gos-btn-primary" onClick={onViewAnalysis}>
-              VIEW AI ANALYSIS
-            </button>
-          </>
-        ) : (
-          <p className="gos-subtitle" style={{ marginBottom: 0 }}>
-            Complete the skill assessment to unlock your AI career analysis.
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> skills.list
+        </div>
+        {skills.length === 0 ? (
+          <p className="gos-empty-note" style={{ marginBottom: 0 }}>
+            No skills yet — generate a roadmap for an AI-built list, or add one above.
           </p>
+        ) : (
+          skills.map((s) => (
+            <div className="roadmap-row" key={s.id}>
+              <span className="roadmap-row-title">{s.name}</span>
+              <StageRail
+                status={s.status}
+                disabled={updatingId === s.id}
+                onChange={(status) => setSkillStatus(s.id, status)}
+              />
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -554,7 +1169,412 @@ function Dashboard({ justSubmitted, hasRecommendation, checkingRec, onViewAnalys
 }
 
 /* ============================================================
-   Root shell — routes between auth / assessment / dashboard
+   Jobs — application tracker
+   ============================================================ */
+
+function JobsView({ onChanged }) {
+  const { token } = useAuth();
+  const [jobs, setJobs] = useState(undefined);
+  const [filter, setFilter] = useState("all");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    company: "",
+    role: "",
+    location: "",
+    source: "",
+    url: "",
+    status: "wishlist",
+    notes: "",
+  });
+
+  const load = () => {
+    api
+      .listJobs(token)
+      .then(setJobs)
+      .catch((err) => setError(errorMessage(err)));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      await api.createJob({ token, ...form });
+      setForm({
+        company: "",
+        role: "",
+        location: "",
+        source: "",
+        url: "",
+        status: "wishlist",
+        notes: "",
+      });
+      load();
+      onChanged?.();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setStatus = async (jobId, status) => {
+    setJobs((list) => list.map((j) => (j.id === jobId ? { ...j, status } : j)));
+    try {
+      await api.updateJob({ token, jobId, status });
+      onChanged?.();
+    } catch (err) {
+      setError(errorMessage(err));
+      load();
+    }
+  };
+
+  const remove = async (jobId) => {
+    if (!window.confirm("Remove this application from the tracker?")) return;
+    try {
+      await api.deleteJob({ token, jobId });
+      setJobs((list) => list.filter((j) => j.id !== jobId));
+      onChanged?.();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  if (jobs === undefined) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading jobs…
+      </div>
+    );
+  }
+
+  const counts = JOB_STATUSES.reduce((acc, s) => {
+    acc[s] = jobs.filter((j) => j.status === s).length;
+    return acc;
+  }, {});
+  const visible = filter === "all" ? jobs : jobs.filter((j) => j.status === filter);
+
+  return (
+    <div className="gos-shell gos-shell-wide">
+      <div>
+        <div className="gos-eyebrow">Pipeline</div>
+        <h1 className="gos-title">Job tracker</h1>
+        <p className="gos-subtitle">
+          Wishlist internships and roles, then walk them through OA → interview → offer.
+        </p>
+      </div>
+
+      <Alert>{error}</Alert>
+
+      <div className="filter-row">
+        <button
+          type="button"
+          className={`filter-chip ${filter === "all" ? "active" : ""}`}
+          onClick={() => setFilter("all")}
+        >
+          ALL {jobs.length}
+        </button>
+        {JOB_STATUSES.map((s) => (
+          <button
+            type="button"
+            key={s}
+            className={`filter-chip ${filter === s ? "active" : ""}`}
+            onClick={() => setFilter(s)}
+          >
+            {JOB_STATUS_LABEL[s]} {counts[s]}
+          </button>
+        ))}
+      </div>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> add.application
+        </div>
+        <form className="job-form" onSubmit={submit}>
+          <input className="gos-input" placeholder="Company" value={form.company} onChange={update("company")} required />
+          <input className="gos-input" placeholder="Role" value={form.role} onChange={update("role")} required />
+          <input className="gos-input" placeholder="Location / Remote" value={form.location} onChange={update("location")} />
+          <input className="gos-input" placeholder="Source (LinkedIn, Naukri…)" value={form.source} onChange={update("source")} />
+          <input className="gos-input" placeholder="Posting URL" value={form.url} onChange={update("url")} />
+          <select className="gos-input" value={form.status} onChange={update("status")}>
+            {JOB_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {JOB_STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+          <input className="gos-input job-notes" placeholder="Notes" value={form.notes} onChange={update("notes")} />
+          <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} disabled={saving}>
+            {saving ? "ADDING…" : "ADD"}
+          </button>
+        </form>
+      </div>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> applications.list
+        </div>
+        {visible.length === 0 ? (
+          <p className="gos-empty-note" style={{ marginBottom: 0 }}>
+            Nothing in this column yet.
+          </p>
+        ) : (
+          visible.map((job) => (
+            <div className="job-row" key={job.id}>
+              <div className="job-row-main">
+                <div className="roadmap-item-title">
+                  {job.company} <span className="dash-job-role">— {job.role}</span>
+                </div>
+                <div className="roadmap-item-desc">
+                  {[job.location, job.source].filter(Boolean).join(" · ")}
+                  {job.url && (
+                    <>
+                      {" · "}
+                      <a href={job.url} target="_blank" rel="noreferrer">
+                        posting
+                      </a>
+                    </>
+                  )}
+                  {job.notes ? ` · ${job.notes}` : ""}
+                </div>
+              </div>
+              <select
+                className="gos-input job-status-select"
+                value={job.status}
+                onChange={(e) => setStatus(job.id, e.target.value)}
+              >
+                {JOB_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {JOB_STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="gos-btn gos-btn-ghost" onClick={() => remove(job.id)}>
+                REMOVE
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Interview prep — question bank from the target career
+   ============================================================ */
+
+function InterviewView({ hasRecommendation, onChanged }) {
+  const { token } = useAuth();
+  const [prep, setPrep] = useState(undefined);
+  const [error, setError] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [category, setCategory] = useState("all");
+  const [openId, setOpenId] = useState(null);
+  const [updatingId, setUpdatingId] = useState(null);
+
+  const load = () => {
+    api
+      .getInterview(token)
+      .then((data) => setPrep(data && data.questions ? data : null))
+      .catch((err) => setError(errorMessage(err)));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const generate = async (regenerate) => {
+    if (
+      regenerate &&
+      !window.confirm("Regenerate interview prep? Your nailed / practicing marks will reset.")
+    ) {
+      return;
+    }
+    setGenerating(true);
+    setError("");
+    try {
+      const data = await api.generateInterview({ token, regenerate });
+      setPrep(data);
+      onChanged?.();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const setStatus = async (questionId, status) => {
+    setUpdatingId(questionId);
+    setPrep((p) =>
+      p
+        ? {
+            ...p,
+            questions: p.questions.map((q) => (q.id === questionId ? { ...q, status } : q)),
+          }
+        : p
+    );
+    try {
+      await api.updateInterviewStatus({ token, questionId, status });
+      load();
+      onChanged?.();
+    } catch (err) {
+      setError(errorMessage(err));
+      load();
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  if (prep === undefined) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading interview prep…
+      </div>
+    );
+  }
+
+  if (!prep) {
+    return (
+      <div className="gos-shell">
+        <div>
+          <div className="gos-eyebrow">Interview lab</div>
+          <h1 className="gos-title">No prep set yet</h1>
+          <p className="gos-subtitle">
+            {hasRecommendation
+              ? "Generate a question bank matched to your target career — DSA, system design, role, behavioral, HR."
+              : "Complete the assessment first so questions match your career path."}
+          </p>
+        </div>
+        <Alert>{error}</Alert>
+        <div className="gos-panel terminal-panel">
+          <button
+            className="gos-btn gos-btn-primary"
+            style={{ width: "auto" }}
+            disabled={!hasRecommendation || generating}
+            onClick={() => generate(false)}
+          >
+            {generating ? "BUILDING…" : "GENERATE INTERVIEW PREP"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const questions = category === "all" ? prep.questions : prep.questions.filter((q) => q.category === category);
+  const cats = ["all", ...Object.keys(INTERVIEW_CAT_LABEL)];
+
+  return (
+    <div className="gos-shell gos-shell-wide">
+      <div>
+        <div className="gos-eyebrow">Interview lab</div>
+        <h1 className="gos-title">{prep.career_title || "Interview prep"}</h1>
+        <p className="gos-subtitle">
+          Work the bank out loud. Open a question for hints and talking points, then mark it nailed when it's clean.
+        </p>
+      </div>
+
+      <Alert>{error}</Alert>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> prep.progress
+        </div>
+        <CircuitTrack percent={prep.progress_percent} />
+        <div className="stat-inline-row">
+          <div className="stat-inline">
+            <span className="stat-inline-val">{prep.total}</span>
+            <span className="stat-inline-key">QUESTIONS</span>
+          </div>
+          <div className="stat-inline">
+            <span className="stat-inline-val">{prep.practicing}</span>
+            <span className="stat-inline-key">IN PLAY</span>
+          </div>
+          <div className="stat-inline">
+            <span className="stat-inline-val">{prep.nailed}</span>
+            <span className="stat-inline-key">NAILED</span>
+          </div>
+        </div>
+        <div style={{ marginTop: 16, textAlign: "right" }}>
+          <button className="gos-btn gos-btn-ghost" onClick={() => generate(true)} disabled={generating}>
+            {generating ? "REBUILDING…" : "REGENERATE PREP"}
+          </button>
+        </div>
+      </div>
+
+      <div className="filter-row">
+        {cats.map((c) => (
+          <button
+            type="button"
+            key={c}
+            className={`filter-chip ${category === c ? "active" : ""}`}
+            onClick={() => setCategory(c)}
+          >
+            {c === "all" ? "ALL" : INTERVIEW_CAT_LABEL[c]}
+          </button>
+        ))}
+      </div>
+
+      {questions.map((q) => {
+        const open = openId === q.id;
+        return (
+          <div className={`gos-panel terminal-panel interview-q ${open ? "is-open" : ""}`} key={q.id}>
+            <button type="button" className="interview-q-head" onClick={() => setOpenId(open ? null : q.id)}>
+              <span className="interview-cat">{INTERVIEW_CAT_LABEL[q.category] || q.category}</span>
+              <span className="interview-prompt">{q.prompt}</span>
+            </button>
+            <div className="interview-status-row">
+              {["not_started", "practicing", "nailed"].map((st) => (
+                <button
+                  type="button"
+                  key={st}
+                  className={`filter-chip ${q.status === st ? "active" : ""}`}
+                  disabled={updatingId === q.id}
+                  onClick={() => setStatus(q.id, st)}
+                >
+                  {INTERVIEW_STAGE_LABEL[st]}
+                </button>
+              ))}
+            </div>
+            {open && (
+              <div className="interview-body">
+                {q.hint && (
+                  <>
+                    <h3 className="guide-h">Hint</h3>
+                    <p className="guide-summary">{q.hint}</p>
+                  </>
+                )}
+                {q.talking_points?.length > 0 && (
+                  <>
+                    <h3 className="guide-h">Talking points</h3>
+                    <ul className="guide-list">
+                      {q.talking_points.map((p) => (
+                        <li key={p}>{p}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================
+   Root shell — routes between auth / assessment / dashboard /
+   roadmap / skills / jobs / interview
    ============================================================ */
 
 function Shell() {
@@ -562,28 +1582,27 @@ function Shell() {
   const [view, setView] = useState("dashboard");
   const [justSubmitted, setJustSubmitted] = useState(false);
   const [recommendation, setRecommendation] = useState(null);
-  const [checkingRec, setCheckingRec] = useState(false);
+  const [skillsRefreshKey, setSkillsRefreshKey] = useState(0);
+  const [dashRefreshKey, setDashRefreshKey] = useState(0);
+
+  const bumpDash = () => setDashRefreshKey((k) => k + 1);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    setCheckingRec(true);
     api
-      .getRecommendation(user.id)
+      .getRecommendation(token)
       .then((data) => {
         if (cancelled) return;
         if (data && data.career_paths) setRecommendation(data);
       })
       .catch(() => {
         /* no saved recommendation yet */
-      })
-      .finally(() => {
-        if (!cancelled) setCheckingRec(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, token]);
 
   if (loading) {
     return (
@@ -607,25 +1626,42 @@ function Shell() {
               setRecommendation(result);
               setJustSubmitted(true);
               setView("results");
+              bumpDash();
             }}
           />
         ) : view === "results" ? (
-          <RecommendationResult
-            result={recommendation}
-            onRetake={() => setView("assessment")}
+          <RecommendationResult result={recommendation} onRetake={() => setView("assessment")} />
+        ) : view === "roadmap" ? (
+          <RoadmapView
+            hasRecommendation={!!recommendation}
+            onSkillsSynced={() => {
+              setSkillsRefreshKey((k) => k + 1);
+              bumpDash();
+            }}
           />
+        ) : view === "skills" ? (
+          <SkillsView refreshKey={skillsRefreshKey} />
+        ) : view === "jobs" ? (
+          <JobsView onChanged={bumpDash} />
+        ) : view === "interview" ? (
+          <InterviewView hasRecommendation={!!recommendation} onChanged={bumpDash} />
         ) : (
           <Dashboard
             justSubmitted={justSubmitted}
-            hasRecommendation={!!recommendation}
-            checkingRec={checkingRec}
+            refreshKey={dashRefreshKey}
             onViewAnalysis={() => setView("results")}
+            onGoRoadmap={() => setView("roadmap")}
+            onGoJobs={() => setView("jobs")}
+            onGoInterview={() => setView("interview")}
+            onGoSkills={() => setView("skills")}
+            onGoAssessment={() => setView("assessment")}
           />
         )}
       </div>
     </div>
   );
 }
+
 export default function App() {
   return (
     <AuthProvider>

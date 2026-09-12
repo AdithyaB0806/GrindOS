@@ -91,6 +91,8 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   padding: 18px 28px;
   border-bottom: 1px solid var(--border-soft);
   background: rgba(10, 11, 14, 0.85);
@@ -140,6 +142,7 @@ a {
 .gos-nav-links {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -249,6 +252,7 @@ a {
   padding: 1px;
   background: linear-gradient(135deg, rgba(232, 172, 92, 0.18), transparent 40%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
@@ -688,4 +692,563 @@ a {
   .gos-spinner {
     animation: none;
   }
+}
+
+/* ============================================================
+   Roadmap & Skills — circuit track (aggregate progress) and
+   stage rail (per-item status). Same instrument-panel language
+   as the grind meter: progress is a filling trace, not a bar.
+   ============================================================ */
+
+.circuit-track-wrap {
+  margin: 4px 0 2px;
+}
+
+.circuit-track-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.circuit-track {
+  height: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: visible;
+  position: relative;
+}
+
+.circuit-track-fill {
+  height: 100%;
+  border-radius: 2px 0 0 2px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  position: relative;
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  min-width: 2px;
+}
+
+.circuit-track-head {
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translateY(-50%);
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 8px 2px rgba(232, 172, 92, 0.55);
+}
+
+.circuit-track-readout {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 7px;
+  text-align: right;
+}
+
+.circuit-track-readout strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ---------- stage rail (per-item status control) ---------- */
+
+.stage-rail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.stage-ticks {
+  display: flex;
+  gap: 3px;
+}
+
+.stage-tick {
+  width: 20px;
+  height: 7px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.stage-tick:hover:not(:disabled) {
+  border-color: #454b56;
+}
+
+.stage-tick.filled {
+  background: var(--accent);
+  border-color: var(--accent);
+  opacity: 0.55;
+}
+
+.stage-tick.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  opacity: 1;
+  box-shadow: 0 0 7px 1px rgba(232, 172, 92, 0.5);
+}
+
+.stage-tick:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.stage-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  min-width: 76px;
+  color: var(--text-faint);
+}
+
+.stage-label-learning {
+  color: var(--accent-2);
+}
+
+.stage-label-practicing {
+  color: var(--accent);
+}
+
+.stage-label-completed {
+  color: var(--success);
+}
+
+/* ---------- roadmap phases ---------- */
+
+.phase-block {
+  padding: 20px 22px;
+}
+
+.phase-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.phase-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.phase-title-text {
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.roadmap-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.roadmap-row:last-child {
+  border-bottom: none;
+}
+
+.roadmap-row-title {
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+/* ---------- skills ---------- */
+
+.stat-inline-row {
+  display: flex;
+  gap: 28px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.stat-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stat-inline-val {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.stat-inline-key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.skill-add-form {
+  display: flex;
+  gap: 10px;
+}
+
+.skill-add-form .gos-input {
+  flex: 1;
+}
+
+.gos-empty-note {
+  color: var(--text-faint);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.gos-shell-wide {
+  max-width: 980px;
+}
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 860px) {
+  .dash-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.dash-stat {
+  text-align: left;
+  padding: 18px 18px 16px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  width: 100%;
+}
+
+.dash-stat-key {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.dash-stat-val {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  display: block;
+  color: var(--text);
+}
+
+.dash-stat-sub {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 6px;
+  display: block;
+}
+
+.dash-next-phase {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.dash-next-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
+.dash-path-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.dash-path-row:last-of-type {
+  border-bottom: none;
+  margin-bottom: 8px;
+}
+
+.dash-path-idx {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  padding-top: 2px;
+}
+
+.dash-job-role {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.job-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+}
+
+.job-chip-applied,
+.job-chip-oa {
+  color: var(--accent-2);
+  border-color: #274152;
+}
+
+.job-chip-interview {
+  color: var(--accent);
+  border-color: #4a3c26;
+}
+
+.job-chip-offer {
+  color: var(--success);
+  border-color: #2a4536;
+}
+
+.job-chip-rejected {
+  color: var(--danger);
+  border-color: #4a2a25;
+}
+
+.roadmap-row.is-open {
+  background: var(--accent-soft);
+  margin: 0 -10px;
+  padding-left: 10px;
+  padding-right: 10px;
+  border-radius: var(--radius);
+}
+
+.roadmap-row-title-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.4;
+  cursor: pointer;
+  flex: 1;
+}
+
+.roadmap-row-title-btn:hover {
+  color: var(--accent);
+}
+
+.guide-panel .terminal-head {
+  justify-content: flex-start;
+}
+
+.guide-close {
+  margin-left: auto;
+}
+
+.guide-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.guide-summary {
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 0 0 12px;
+}
+
+.guide-h {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 18px 0 8px;
+}
+
+.guide-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.guide-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .guide-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.guide-card {
+  display: block;
+  padding: 12px 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+}
+
+.guide-card:hover {
+  border-color: var(--accent);
+}
+
+.guide-card-name {
+  font-size: 13.5px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.guide-card-why {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
+.guide-card-cta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent);
+  margin-top: 8px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.filter-chip.active {
+  color: var(--accent);
+  border-color: #4a3c26;
+  background: var(--accent-soft);
+}
+
+.job-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.job-form .job-notes {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .job-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.job-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.job-row:last-child {
+  border-bottom: none;
+}
+
+.job-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.job-status-select {
+  width: auto;
+  min-width: 128px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.interview-q {
+  padding: 16px 18px;
+}
+
+.interview-q-head {
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  color: inherit;
+}
+
+.interview-cat {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.interview-prompt {
+  font-size: 14.5px;
+  color: var(--text);
+  line-height: 1.45;
+  display: block;
+}
+
+.interview-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.interview-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
 }

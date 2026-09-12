@@ -10,6 +10,7 @@ from fastapi import Depends
 
 from Backend.database import get_db
 from Backend.models import Assessment, Recommendation, User
+from Backend.auth import get_current_user
 
 load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -59,18 +60,12 @@ def generate_recommendation(answers: dict) -> dict:
 
 @router.post("/generate")
 def get_recommendations(
-    user_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # confirm the user actually exists, so a bad id gives a clean 404
-    # instead of failing later with a confusing error
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
     assessment = (
         db.query(Assessment)
-        .filter(Assessment.user_id == user_id)
+        .filter(Assessment.user_id == current_user.id)
         .order_by(Assessment.id.desc())
         .first()
     )
@@ -80,7 +75,7 @@ def get_recommendations(
 
     existing = (
         db.query(Recommendation)
-        .filter(Recommendation.user_id == user_id)
+        .filter(Recommendation.user_id == current_user.id)
         .first()
     )
     if existing:
@@ -92,7 +87,7 @@ def get_recommendations(
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
 
     new_rec = Recommendation(
-        user_id=user_id,
+        user_id=current_user.id,
         result=result
     )
     db.add(new_rec)
@@ -104,12 +99,12 @@ def get_recommendations(
 
 @router.get("/")
 def get_saved_recommendation(
-    user_id: int,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     recommendation = (
         db.query(Recommendation)
-        .filter(Recommendation.user_id == user_id)
+        .filter(Recommendation.user_id == current_user.id)
         .first()
     )
     if not recommendation:
