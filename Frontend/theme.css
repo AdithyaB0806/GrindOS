@@ -1247,6 +1247,296 @@ a {
   margin-top: 12px;
 }
 
+/* ============================================================
+   Roadmap flowchart + side workspace (guide / ask-AI doubts).
+   The vertical trace is the same "circuit" language as the
+   grind meter — a live line with status beads along it, not a
+   generic list.
+   ============================================================ */
+
+.gos-shell-flow {
+  max-width: 1180px;
+}
+
+.flow-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .flow-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.flow-canvas-wrap {
+  min-width: 0;
+}
+
+.flow-side {
+  min-width: 0;
+}
+
+.flow-canvas {
+  position: relative;
+  padding-left: 30px;
+}
+
+.flow-canvas::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    var(--accent-2-soft),
+    var(--border) 12%,
+    var(--border) 88%,
+    var(--accent-2-soft)
+  );
+}
+
+.flow-phase {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.flow-phase-marker {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 0 14px;
+}
+
+.flow-phase-marker::before {
+  content: "";
+  position: absolute;
+  left: -30px;
+  top: 14px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--accent-2);
+  box-shadow: 0 0 8px 1px rgba(111, 167, 196, 0.45);
+}
+
+.flow-phase-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--accent-2);
+  flex-shrink: 0;
+}
+
+.flow-phase-title {
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.flow-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 11px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  transition: all 0.15s ease;
+}
+
+.flow-node:hover {
+  border-color: #3a3f48;
+  background: #1f232a;
+}
+
+.flow-node::before {
+  content: "";
+  position: absolute;
+  left: -24.5px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--border);
+}
+
+.flow-node.status-learning::before {
+  border-color: var(--accent-2);
+}
+
+.flow-node.status-practicing::before {
+  border-color: var(--accent);
+  box-shadow: 0 0 6px 1px rgba(232, 172, 92, 0.4);
+}
+
+.flow-node.status-completed::before {
+  border-color: var(--success);
+  background: var(--success);
+  box-shadow: 0 0 6px 1px rgba(127, 194, 155, 0.5);
+}
+
+.flow-node.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.flow-node-title {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.flow-node-status {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.side-panel,
+.flow-side-empty {
+  position: sticky;
+  top: 90px;
+}
+
+.side-tabs {
+  margin: 16px 0 4px;
+}
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.chat-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.chat-bubble {
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  max-width: 92%;
+}
+
+.chat-bubble p {
+  margin: 4px 0 0;
+}
+
+.chat-bubble-role {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.chat-bubble-user {
+  align-self: flex-end;
+  background: var(--accent-soft);
+  border: 1px solid #4a3c26;
+}
+
+.chat-bubble-assistant {
+  align-self: flex-start;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.chat-bubble-pending {
+  opacity: 0.7;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input-row .gos-input {
+  flex: 1;
+}
+
+.chat-send-btn {
+  width: auto;
+  padding: 11px 16px;
+}
+
+@media (max-width: 900px) {
+  .side-panel,
+  .flow-side-empty {
+    position: static;
+  }
+}
+
+/* ============================================================
+   Recommendation results — three career-path cards, a per-card
+   "build this path" action, and a feedback box that regenerates
+   the set.
+   ============================================================ */
+
+.rec-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .rec-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rec-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.rec-choose-btn {
+  margin-top: auto;
+  padding-top: 14px;
+  width: 100%;
+}
+
+.rec-feedback-input {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-body);
+  min-height: 72px;
+}
+
+.rec-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
 .interview-body {
   margin-top: 12px;
   padding-top: 12px;

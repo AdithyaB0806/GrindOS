@@ -85,6 +85,12 @@ class RoadmapItemGuide(Base):
     id = Column(Integer, primary_key=True, index=True)
     roadmap_item_id = Column(Integer, ForeignKey("roadmap_items.id"), unique=True)
     content = Column(JSON)
+class RoadmapItemChat(Base):
+    __tablename__ = "roadmap_item_chats"
+    id = Column(Integer, primary_key=True, index=True)
+    roadmap_item_id = Column(Integer, ForeignKey("roadmap_items.id"), unique=True)
+    # [{"role": "user" | "assistant", "content": "..."}]
+    messages = Column(JSON)
 class JobApplication(Base):
     __tablename__ = "job_applications"
     id = Column(Integer, primary_key=True, index=True)

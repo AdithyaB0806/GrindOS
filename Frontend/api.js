@@ -73,6 +73,16 @@ export const api = {
   generateRecommendation: (token) =>
     request("/recommendations/generate", { method: "POST", token }),
 
+  regenerateRecommendation: ({ token, feedback }) =>
+    request("/recommendations/generate", {
+      method: "POST",
+      token,
+      query: {
+        regenerate: "true",
+        ...(feedback ? { feedback } : {}),
+      },
+    }),
+
   getRecommendation: (token) => request("/recommendations/", { token }),
 
   // ---- Roadmap ----
@@ -114,6 +124,16 @@ export const api = {
 
   getRoadmapItemGuide: ({ token, itemId }) =>
     request(`/roadmap/items/${itemId}/guide`, { token }),
+
+  getRoadmapItemChat: ({ token, itemId }) =>
+    request(`/roadmap/items/${itemId}/chat`, { token }),
+
+  askRoadmapItemDoubt: ({ token, itemId, question }) =>
+    request(`/roadmap/items/${itemId}/ask`, {
+      method: "POST",
+      token,
+      body: { question },
+    }),
 
   getDashboardSummary: (token) => request("/dashboard/summary", { token }),
 

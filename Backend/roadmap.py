@@ -15,9 +15,10 @@ from Backend.models import (
     Roadmap,
     RoadmapItem,
     RoadmapItemGuide,
+    RoadmapItemChat,
     Skill,
 )
-from Backend.schemas import RoadmapItemStatusUpdate
+from Backend.schemas import RoadmapItemStatusUpdate, ChatAskRequest
 from Backend.auth import get_current_user
 
 load_dotenv()
@@ -180,6 +181,75 @@ def generate_item_guide(career_title: str, item_title: str, phase_title: str) ->
         config=types.GenerateContentConfig(response_mime_type="application/json"),
     )
     return json.loads(response.text)
+
+
+CHAT_PROMPT = """
+You are a friendly, sharp mentor helping a computer science / tech student in India
+who is working through a learning roadmap. Answer their doubt about the specific
+roadmap item below. Be concise, practical, and specific to the Indian job market
+where relevant. Plain text only - short paragraphs or bullet points, no markdown
+headers, no JSON, no code fences unless the student is asking about actual code.
+
+Career path: {career_title}
+Current roadmap item: {item_title} (phase: {phase_title})
+Reference brief for this item: {guide_summary}
+
+Conversation so far:
+{history}
+
+Student's new question: {question}
+
+Answer directly and helpfully in under 180 words unless the question genuinely
+needs more room.
+"""
+
+
+def _format_chat_history(messages: list) -> str:
+    if not messages:
+        return "(no earlier messages)"
+    lines = []
+    for m in messages[-10:]:
+        speaker = "Student" if m.get("role") == "user" else "Mentor"
+        lines.append(f"{speaker}: {m.get('content', '')}")
+    return "\n".join(lines)
+
+
+def generate_chat_reply(
+    career_title: str,
+    item_title: str,
+    phase_title: str,
+    guide_summary: str | None,
+    messages: list,
+    question: str,
+) -> str:
+    prompt = CHAT_PROMPT.format(
+        career_title=career_title,
+        item_title=item_title,
+        phase_title=phase_title or "",
+        guide_summary=guide_summary or "Not generated yet.",
+        history=_format_chat_history(messages),
+        question=question,
+    )
+    response = client.models.generate_content(
+        model="gemini-3.6-flash",
+        contents=prompt,
+    )
+    return (response.text or "").strip()
+
+
+def _authorize_item(item_id: int, current_user: User, db: Session) -> tuple[RoadmapItem, Roadmap]:
+    """
+    Shared ownership check for anything scoped to a single roadmap item
+    (guide, chat, status updates): item must exist and its roadmap must
+    belong to the requesting user.
+    """
+    item = db.query(RoadmapItem).filter(RoadmapItem.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Roadmap item not found")
+    roadmap = db.query(Roadmap).filter(Roadmap.id == item.roadmap_id).first()
+    if not roadmap or roadmap.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this item")
+    return item, roadmap
 
 
 def _sync_skill_for_item(db: Session, user_id: int, item: RoadmapItem):
@@ -400,3 +470,74 @@ def get_item_guide(
         "status": item.status,
         "guide": content,
     }
+
+
+@router.get("/items/{item_id}/chat")
+def get_item_chat(
+    item_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    item, _ = _authorize_item(item_id, current_user, db)
+    chat = (
+        db.query(RoadmapItemChat)
+        .filter(RoadmapItemChat.roadmap_item_id == item.id)
+        .first()
+    )
+    return {"item_id": item.id, "messages": chat.messages if chat else []}
+
+
+@router.post("/items/{item_id}/ask")
+def ask_item_doubt(
+    item_id: int,
+    payload: ChatAskRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    question = (payload.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    item, roadmap = _authorize_item(item_id, current_user, db)
+
+    guide = (
+        db.query(RoadmapItemGuide)
+        .filter(RoadmapItemGuide.roadmap_item_id == item.id)
+        .first()
+    )
+    guide_summary = (guide.content or {}).get("summary") if guide else None
+
+    chat = (
+        db.query(RoadmapItemChat)
+        .filter(RoadmapItemChat.roadmap_item_id == item.id)
+        .first()
+    )
+    messages = list(chat.messages) if chat and chat.messages else []
+
+    try:
+        answer = generate_chat_reply(
+            career_title=roadmap.career_title,
+            item_title=item.title,
+            phase_title=item.phase_title,
+            guide_summary=guide_summary,
+            messages=messages,
+            question=question,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI chat failed: {str(e)}")
+
+    if not answer:
+        raise HTTPException(status_code=500, detail="AI returned an empty answer")
+
+    messages.append({"role": "user", "content": question})
+    messages.append({"role": "assistant", "content": answer})
+
+    if chat:
+        chat.messages = messages
+    else:
+        chat = RoadmapItemChat(roadmap_item_id=item.id, messages=messages)
+        db.add(chat)
+
+    db.commit()
+
+    return {"item_id": item.id, "messages": messages}

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useRef } from "react";
 import { api, ApiError } from "./api";
 import "./theme.css";
 
@@ -201,12 +201,6 @@ function Navbar({ view, setView }) {
             onClick={() => setView("skills")}
           >
             SKILLS
-          </button>
-          <button
-            className={`gos-nav-btn ${view === "jobs" ? "active" : ""}`}
-            onClick={() => setView("jobs")}
-          >
-            JOBS
           </button>
            <button
             className={`gos-nav-btn ${view === "jobs" ? "active" : ""}`}
@@ -497,63 +491,135 @@ function Assessment({ onDone }) {
    Dashboard — profile readout + roadmap teaser
    ============================================================ */
 
-function RecommendationResult({ result, onRetake }) {
+function RecommendationResult({ result, onRetake, onChoosePath, onResultUpdated }) {
+  const { token } = useAuth();
+  const [feedback, setFeedback] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
+  const [error, setError] = useState("");
+
   if (!result) return null;
 
+  const regenerate = async (e) => {
+    e.preventDefault();
+    const note = feedback.trim();
+    if (!note || regenerating) return;
+    setRegenerating(true);
+    setError("");
+    try {
+      const data = await api.regenerateRecommendation({ token, feedback: note });
+      onResultUpdated?.(data);
+      setFeedback("");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   return (
-    <div className="gos-shell">
-      <div className="gos-eyebrow">AI ANALYSIS COMPLETE</div>
+    <div className="gos-shell gos-shell-wide">
+      <div className="gos-eyebrow">AI analysis complete</div>
+      <h1 className="gos-title">Your career profile</h1>
+      <p className="gos-subtitle">
+        GrindOS analyzed your assessment answers. Pick a path to build a roadmap for it, or tell
+        it what to change and get an updated set.
+      </p>
 
-      <h1 className="gos-title">Your Career Profile</h1>
+      <Alert>{error}</Alert>
 
-      <p className="gos-subtitle">GrindOS analyzed your assessment answers.</p>
+      <div className="rec-grid">
+        {result.career_paths?.map((career, index) => (
+          <div className="gos-panel terminal-panel rec-card" key={career.title}>
+            <div className="terminal-head">
+              <span className="terminal-dot" /> path_{String(index + 1).padStart(2, "0")}
+            </div>
+            <h2 className="guide-title">{career.title}</h2>
+            <p className="guide-summary">{career.fit_reason}</p>
 
-      {result.career_paths?.map((career, index) => (
-        <div className="gos-panel" key={career.title}>
-          <div className="terminal-head">
-            <span className="terminal-dot" />
-            CAREER_{index + 1}
+            {career.matching_skills?.length > 0 && (
+              <>
+                <h3 className="guide-h">Matching skills</h3>
+                <ul className="guide-list">
+                  {career.matching_skills.map((skill) => (
+                    <li key={skill}>{skill}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {career.skill_gaps?.length > 0 && (
+              <>
+                <h3 className="guide-h">Skill gaps</h3>
+                <ul className="guide-list">
+                  {career.skill_gaps.map((gap) => (
+                    <li key={gap}>{gap}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {career.example_roles?.length > 0 && (
+              <>
+                <h3 className="guide-h">Roles to search for</h3>
+                <ul className="guide-list">
+                  {career.example_roles.map((role) => (
+                    <li key={role}>{role}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            <button
+              type="button"
+              className="gos-btn gos-btn-primary rec-choose-btn"
+              onClick={() => onChoosePath?.(career.title)}
+            >
+              BUILD ROADMAP FOR THIS PATH →
+            </button>
           </div>
-
-          <h2>{career.title}</h2>
-
-          <p>{career.fit_reason}</p>
-
-          <h3>Matching Skills</h3>
-          <ul>
-            {career.matching_skills?.map((skill) => (
-              <li key={skill}>{skill}</li>
-            ))}
-          </ul>
-
-          <h3>Skill Gaps</h3>
-          <ul>
-            {career.skill_gaps?.map((gap) => (
-              <li key={gap}>{gap}</li>
-            ))}
-          </ul>
-
-          <h3>Example Roles</h3>
-          <ul>
-            {career.example_roles?.map((role) => (
-              <li key={role}>{role}</li>
-            ))}
-          </ul>
-        </div>
-      ))}
-
-      <div className="gos-panel">
-        <div className="terminal-head">
-          <span className="terminal-dot" />
-          NEXT_SKILL
-        </div>
-
-        <h2>{result.next_skill_to_learn}</h2>
+        ))}
       </div>
 
-      <button className="gos-btn" onClick={onRetake}>
-        RETAKE ASSESSMENT
-      </button>
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> next_skill
+        </div>
+        <h2 className="guide-title">{result.next_skill_to_learn}</h2>
+      </div>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> refine.suggestions
+        </div>
+        <p className="gos-empty-note" style={{ marginBottom: 12 }}>
+          Not quite it? Tell it what to change — more remote-friendly roles, less data-heavy,
+          lean more into your Python projects, whatever's on your mind — and it'll rebuild these
+          three paths with that in mind.
+        </p>
+        <form onSubmit={regenerate}>
+          <textarea
+            className="gos-input rec-feedback-input"
+            rows={3}
+            placeholder="e.g. I'd rather avoid pure data roles and lean more backend…"
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            disabled={regenerating}
+          />
+          <div className="rec-actions-row">
+            <button
+              type="submit"
+              className="gos-btn gos-btn-primary"
+              style={{ width: "auto" }}
+              disabled={regenerating || !feedback.trim()}
+            >
+              {regenerating ? "UPDATING…" : "GET UPDATED SUGGESTIONS"}
+            </button>
+            <button type="button" className="gos-btn gos-btn-ghost" onClick={onRetake}>
+              RETAKE ASSESSMENT
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -743,19 +809,11 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
    Roadmap — phase-based learning path with per-item status
    ============================================================ */
 
-function LearningGuide({ payload, loading, error, onClose }) {
+function GuideBody({ payload, loading, error }) {
   const guide = payload?.guide;
 
   return (
-    <div className="gos-panel terminal-panel guide-panel">
-      <div className="terminal-head">
-        <span className="terminal-dot" /> learn.guide
-        <button className="gos-btn gos-btn-ghost guide-close" type="button" onClick={onClose}>
-          CLOSE
-        </button>
-      </div>
-      <h2 className="guide-title">{payload?.title || "Loading…"}</h2>
-      {payload?.phase_title && <div className="dash-next-phase">{payload.phase_title}</div>}
+    <>
       <Alert>{error}</Alert>
       {loading && (
         <div className="gos-loading">
@@ -828,11 +886,155 @@ function LearningGuide({ payload, loading, error, onClose }) {
           )}
         </>
       )}
+    </>
+  );
+}
+
+/* ---------- ask-AI doubt chat, scoped to one roadmap item ---------- */
+
+function RoadmapChat({ token, itemId }) {
+  const [messages, setMessages] = useState(undefined); // undefined = loading
+  const [error, setError] = useState("");
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMessages(undefined);
+    setError("");
+    api
+      .getRoadmapItemChat({ token, itemId })
+      .then((data) => {
+        if (!cancelled) setMessages(data.messages || []);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, itemId]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, sending]);
+
+  const send = async (e) => {
+    e.preventDefault();
+    const question = input.trim();
+    if (!question || sending) return;
+    setInput("");
+    setError("");
+    setSending(true);
+    setMessages((m) => [...(m || []), { role: "user", content: question }]);
+    try {
+      const data = await api.askRoadmapItemDoubt({ token, itemId, question });
+      setMessages(data.messages || []);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="chat-panel">
+      <div className="chat-scroll" ref={scrollRef}>
+        {messages === undefined && (
+          <div className="gos-loading">
+            <span className="gos-spinner" /> Loading conversation…
+          </div>
+        )}
+        {messages?.length === 0 && (
+          <p className="gos-empty-note">
+            Stuck on a concept, need a simpler explanation, or not sure where to start? Ask here.
+          </p>
+        )}
+        {messages?.map((m, i) => (
+          <div key={i} className={`chat-bubble chat-bubble-${m.role}`}>
+            <span className="chat-bubble-role">{m.role === "user" ? "YOU" : "MENTOR"}</span>
+            <p>{m.content}</p>
+          </div>
+        ))}
+        {sending && (
+          <div className="chat-bubble chat-bubble-assistant chat-bubble-pending">
+            <span className="chat-bubble-role">MENTOR</span>
+            <p>thinking…</p>
+          </div>
+        )}
+      </div>
+      <Alert>{error}</Alert>
+      <form className="chat-input-row" onSubmit={send}>
+        <input
+          className="gos-input"
+          placeholder="Ask a doubt about this topic…"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={sending}
+        />
+        <button
+          className="gos-btn gos-btn-primary chat-send-btn"
+          type="submit"
+          disabled={sending || !input.trim()}
+        >
+          {sending ? "…" : "ASK"}
+        </button>
+      </form>
     </div>
   );
 }
 
-function RoadmapView({ hasRecommendation, onSkillsSynced }) {
+/* ---------- side workspace: guide + chat, tabbed, for one node ---------- */
+
+function RoadmapSidePanel({ item, token, guidePayload, guideLoading, guideError, updating, onStatusChange, onClose }) {
+  const [tab, setTab] = useState("guide");
+
+  useEffect(() => {
+    setTab("guide");
+  }, [item.id]);
+
+  return (
+    <div className="gos-panel terminal-panel side-panel">
+      <div className="terminal-head">
+        <span className="terminal-dot" /> item.workspace
+        <button className="gos-btn gos-btn-ghost guide-close" type="button" onClick={onClose}>
+          CLOSE
+        </button>
+      </div>
+      <h2 className="guide-title">{item.title}</h2>
+      {item.phase_title && <div className="dash-next-phase">{item.phase_title}</div>}
+      <StageRail status={item.status} disabled={updating} onChange={onStatusChange} />
+
+      <div className="filter-row side-tabs">
+        <button
+          type="button"
+          className={`filter-chip ${tab === "guide" ? "active" : ""}`}
+          onClick={() => setTab("guide")}
+        >
+          GUIDE
+        </button>
+        <button
+          type="button"
+          className={`filter-chip ${tab === "chat" ? "active" : ""}`}
+          onClick={() => setTab("chat")}
+        >
+          ASK AI
+        </button>
+      </div>
+
+      {tab === "guide" ? (
+        <GuideBody payload={guidePayload} loading={guideLoading} error={guideError} />
+      ) : (
+        <RoadmapChat token={token} itemId={item.id} />
+      )}
+    </div>
+  );
+}
+
+function RoadmapView({ hasRecommendation, onSkillsSynced, initialCareerTitle, onCareerTitleConsumed }) {
   const { token } = useAuth();
   const [roadmap, setRoadmap] = useState(undefined); // undefined = loading, null = none yet
   const [error, setError] = useState("");
@@ -855,7 +1057,7 @@ function RoadmapView({ hasRecommendation, onSkillsSynced }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const generate = async (regenerate) => {
+  const generate = async (regenerate, careerTitleOverride) => {
     if (
       regenerate &&
       !window.confirm(
@@ -867,7 +1069,11 @@ function RoadmapView({ hasRecommendation, onSkillsSynced }) {
     setGenerating(true);
     setError("");
     try {
-      const data = await api.generateRoadmap({ token, regenerate });
+      const data = await api.generateRoadmap({
+        token,
+        regenerate,
+        careerTitle: careerTitleOverride || undefined,
+      });
       setRoadmap(data);
       setOpenItem(null);
       setGuidePayload(null);
@@ -878,6 +1084,21 @@ function RoadmapView({ hasRecommendation, onSkillsSynced }) {
       setGenerating(false);
     }
   };
+
+  // A path chosen from the results screen either builds a fresh roadmap
+  // (none exists yet) or, if a roadmap for a different path already
+  // exists, regenerates it for the newly chosen path.
+  useEffect(() => {
+    if (roadmap === undefined) return; // still loading
+    if (!initialCareerTitle) return;
+    if (roadmap && roadmap.career_title === initialCareerTitle) {
+      onCareerTitleConsumed?.();
+      return;
+    }
+    generate(!!roadmap, initialCareerTitle);
+    onCareerTitleConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roadmap, initialCareerTitle]);
 
   const setItemStatus = async (itemId, status) => {
     setUpdatingId(itemId);
@@ -932,6 +1153,14 @@ function RoadmapView({ hasRecommendation, onSkillsSynced }) {
   }
 
   if (!roadmap) {
+    if (generating) {
+      return (
+        <div className="gos-loading">
+          <span className="gos-spinner" /> Building your roadmap…
+        </div>
+      );
+    }
+
     return (
       <div className="gos-shell">
         <div>
@@ -969,12 +1198,13 @@ function RoadmapView({ hasRecommendation, onSkillsSynced }) {
   }
 
   return (
-    <div className="gos-shell">
+    <div className="gos-shell gos-shell-flow">
       <div>
         <div className="gos-eyebrow">Learning path</div>
         <h1 className="gos-title">{roadmap.career_title}</h1>
         <p className="gos-subtitle">
-          Click an item for how to learn it (channels, docs, a project). Use the ticks to mark progress — it syncs to skills.
+          Click a node to open it — how to learn it, resources, and an AI mentor for doubts.
+          Track progress from the side panel.
         </p>
       </div>
 
@@ -986,48 +1216,71 @@ function RoadmapView({ hasRecommendation, onSkillsSynced }) {
         </div>
         <CircuitTrack percent={roadmap.progress_percent} />
         <div style={{ marginTop: 16, textAlign: "right" }}>
-          <button className="gos-btn gos-btn-ghost" onClick={() => generate(true)} disabled={generating}>
+          <button className="gos-btn gos-btn-ghost" onClick={() => generate(true, roadmap.career_title)} disabled={generating}>
             {generating ? "REBUILDING…" : "REGENERATE ROADMAP"}
           </button>
         </div>
       </div>
 
-      {roadmap.phases.map((phase) => (
-        <div className="gos-panel phase-block" key={phase.phase_number}>
-          <div className="phase-head">
-            <span className="phase-num">PHASE {String(phase.phase_number).padStart(2, "0")}</span>
-            <span className="phase-title-text">{phase.phase_title}</span>
+      <div className="flow-layout">
+        <div className="gos-panel terminal-panel flow-canvas-wrap">
+          <div className="terminal-head">
+            <span className="terminal-dot" /> roadmap.flow
           </div>
-          {phase.items.map((item) => (
-            <div
-              className={`roadmap-row ${openItem?.id === item.id ? "is-open" : ""}`}
-              key={item.id}
-            >
-              <button
-                type="button"
-                className="roadmap-row-title-btn"
-                onClick={() => openGuide(item)}
-              >
-                {item.title}
-              </button>
-              <StageRail
-                status={item.status}
-                disabled={updatingId === item.id}
-                onChange={(status) => setItemStatus(item.id, status)}
-              />
-            </div>
-          ))}
+          <div className="flow-canvas">
+            {roadmap.phases.map((phase) => (
+              <div className="flow-phase" key={phase.phase_number}>
+                <div className="flow-phase-marker">
+                  <span className="flow-phase-num">
+                    PHASE {String(phase.phase_number).padStart(2, "0")}
+                  </span>
+                  <span className="flow-phase-title">{phase.phase_title}</span>
+                </div>
+                {phase.items.map((item) => (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={`flow-node status-${item.status} ${
+                      openItem?.id === item.id ? "is-active" : ""
+                    }`}
+                    onClick={() => openGuide({ ...item, phase_title: phase.phase_title })}
+                  >
+                    <span className="flow-node-title">{item.title}</span>
+                    <span className={`flow-node-status stage-label-${item.status}`}>
+                      {STAGE_LABEL[item.status] || item.status}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
-      ))}
 
-      {openItem && (
-        <LearningGuide
-          payload={guidePayload}
-          loading={guideLoading}
-          error={guideError}
-          onClose={() => setOpenItem(null)}
-        />
-      )}
+        <div className="flow-side">
+          {openItem ? (
+            <RoadmapSidePanel
+              item={openItem}
+              token={token}
+              guidePayload={guidePayload}
+              guideLoading={guideLoading}
+              guideError={guideError}
+              updating={updatingId === openItem.id}
+              onStatusChange={(status) => setItemStatus(openItem.id, status)}
+              onClose={() => setOpenItem(null)}
+            />
+          ) : (
+            <div className="gos-panel terminal-panel flow-side-empty">
+              <div className="terminal-head">
+                <span className="terminal-dot" /> item.workspace
+              </div>
+              <p className="gos-empty-note">
+                Select a node on the left to see how to learn it, track progress, or ask the AI
+                mentor a doubt.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1582,6 +1835,7 @@ function Shell() {
   const [view, setView] = useState("dashboard");
   const [justSubmitted, setJustSubmitted] = useState(false);
   const [recommendation, setRecommendation] = useState(null);
+  const [chosenCareerTitle, setChosenCareerTitle] = useState(null);
   const [skillsRefreshKey, setSkillsRefreshKey] = useState(0);
   const [dashRefreshKey, setDashRefreshKey] = useState(0);
 
@@ -1630,10 +1884,20 @@ function Shell() {
             }}
           />
         ) : view === "results" ? (
-          <RecommendationResult result={recommendation} onRetake={() => setView("assessment")} />
+          <RecommendationResult
+            result={recommendation}
+            onRetake={() => setView("assessment")}
+            onChoosePath={(title) => {
+              setChosenCareerTitle(title);
+              setView("roadmap");
+            }}
+            onResultUpdated={(data) => setRecommendation(data)}
+          />
         ) : view === "roadmap" ? (
           <RoadmapView
             hasRecommendation={!!recommendation}
+            initialCareerTitle={chosenCareerTitle}
+            onCareerTitleConsumed={() => setChosenCareerTitle(null)}
             onSkillsSynced={() => {
               setSkillsRefreshKey((k) => k + 1);
               bumpDash();

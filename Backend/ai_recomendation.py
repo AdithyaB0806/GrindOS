@@ -29,6 +29,12 @@ Given this user's interest assessment answers (JSON below), return:
 User answers:
 {answers}
 
+The student has also given this specific feedback on what to change from a previous
+set of suggestions (this will say "None provided." on their first run):
+{feedback}
+If feedback is present, prioritize it while still staying grounded in their original
+assessment answers - don't ignore the assessment just because feedback was given.
+
 Respond ONLY with valid JSON in this exact schema, no markdown, no extra text:
 {{
   "career_paths": [
@@ -44,8 +50,11 @@ Respond ONLY with valid JSON in this exact schema, no markdown, no extra text:
 }}
 """
 
-def generate_recommendation(answers: dict) -> dict:
-    prompt = RECOMMENDATION_PROMPT.format(answers=json.dumps(answers))
+def generate_recommendation(answers: dict, feedback: str | None = None) -> dict:
+    prompt = RECOMMENDATION_PROMPT.format(
+        answers=json.dumps(answers),
+        feedback=feedback.strip() if feedback and feedback.strip() else "None provided.",
+    )
 
     response = client.models.generate_content(
         model="gemini-3.6-flash",
@@ -60,6 +69,8 @@ def generate_recommendation(answers: dict) -> dict:
 
 @router.post("/generate")
 def get_recommendations(
+    regenerate: bool = False,
+    feedback: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -78,13 +89,19 @@ def get_recommendations(
         .filter(Recommendation.user_id == current_user.id)
         .first()
     )
-    if existing:
+    if existing and not regenerate:
         return existing.result
 
     try:
-        result = generate_recommendation(assessment.answers)
+        result = generate_recommendation(assessment.answers, feedback=feedback)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+    if existing:
+        existing.result = result
+        db.commit()
+        db.refresh(existing)
+        return existing.result
 
     new_rec = Recommendation(
         user_id=current_user.id,

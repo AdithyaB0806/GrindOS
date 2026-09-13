@@ -101,3 +101,12 @@ class JobUpdate(BaseModel):
 
 class InterviewQuestionStatusUpdate(BaseModel):
     status: str  # not_started | practicing | nailed
+
+
+class ChatAskRequest(BaseModel):
+    question: str
+
+
+class ChatMessageOut(BaseModel):
+    role: str
+    content: str
