@@ -170,7 +170,7 @@ function StageRail({ status, onChange, disabled }) {
   );
 }
 
-function Navbar({ view, setView }) {
+function Navbar({ view, setView, hasRecommendation }) {
   const { user, logout } = useAuth();
 
   return (
@@ -185,8 +185,10 @@ function Navbar({ view, setView }) {
             DASHBOARD
           </button>
           <button
-            className={`gos-nav-btn ${view === "assessment" ? "active" : ""}`}
-            onClick={() => setView("assessment")}
+            className={`gos-nav-btn ${
+              view === "assessment" || view === "results" ? "active" : ""
+            }`}
+            onClick={() => setView(hasRecommendation ? "results" : "assessment")}
           >
             ASSESSMENT
           </button>
@@ -1297,6 +1299,8 @@ function SkillsView({ refreshKey }) {
   const [newSkill, setNewSkill] = useState("");
   const [adding, setAdding] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [filter, setFilter] = useState("all"); // all | in_progress | completed
 
   const load = () => {
     Promise.all([api.listSkills(token), api.getSkillsDashboard(token)])
@@ -1342,6 +1346,19 @@ function SkillsView({ refreshKey }) {
     }
   };
 
+  const removeSkill = async (skillId) => {
+    setDeletingId(skillId);
+    setError("");
+    try {
+      await api.deleteSkill({ token, skillId });
+      load();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (skills === undefined) {
     return (
       <div className="gos-loading">
@@ -1350,13 +1367,62 @@ function SkillsView({ refreshKey }) {
     );
   }
 
+  const matchesFilter = (s) => {
+    if (filter === "completed") return s.status === "completed";
+    if (filter === "in_progress") return s.status === "learning" || s.status === "practicing";
+    return true;
+  };
+
+  const visible = skills.filter(matchesFilter);
+
+  const roadmapSkills = visible.filter((s) => s.source === "roadmap");
+  const manualSkills = visible.filter((s) => s.source === "manual");
+
+  // group roadmap skills by phase, keeping phases in first-seen order
+  const phaseOrder = [];
+  const roadmapByPhase = {};
+  roadmapSkills.forEach((s) => {
+    const key = s.phase_title || "Other";
+    if (!roadmapByPhase[key]) {
+      roadmapByPhase[key] = [];
+      phaseOrder.push(key);
+    }
+    roadmapByPhase[key].push(s);
+  });
+
+  const inProgress = (dash?.by_status?.learning ?? 0) + (dash?.by_status?.practicing ?? 0);
+
+  const renderRow = (s) => (
+    <div className="roadmap-row" key={s.id}>
+      <span className="roadmap-row-title">{s.name}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <StageRail
+          status={s.status}
+          disabled={updatingId === s.id}
+          onChange={(status) => setSkillStatus(s.id, status)}
+        />
+        {s.source === "manual" && (
+          <button
+            type="button"
+            className="gos-btn gos-btn-ghost"
+            disabled={deletingId === s.id}
+            onClick={() => removeSkill(s.id)}
+          >
+            {deletingId === s.id ? "…" : "REMOVE"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="gos-shell">
       <div>
         <div className="gos-eyebrow">Skill tracker</div>
         <h1 className="gos-title">Skills</h1>
         <p className="gos-subtitle">
-          Roadmap items land here automatically. Add anything else you're picking up on your own.
+          Roadmap items land here automatically, grouped by phase. Add anything else you're
+          picking up on your own below.
         </p>
       </div>
 
@@ -1371,6 +1437,10 @@ function SkillsView({ refreshKey }) {
           <div className="stat-inline">
             <span className="stat-inline-val">{dash?.total_skills ?? 0}</span>
             <span className="stat-inline-key">TRACKED</span>
+          </div>
+          <div className="stat-inline">
+            <span className="stat-inline-val">{inProgress}</span>
+            <span className="stat-inline-key">IN PROGRESS</span>
           </div>
           <div className="stat-inline">
             <span className="stat-inline-val">{dash?.completed_skills ?? 0}</span>
@@ -1396,27 +1466,74 @@ function SkillsView({ refreshKey }) {
         </form>
       </div>
 
-      <div className="gos-panel terminal-panel">
-        <div className="terminal-head">
-          <span className="terminal-dot" /> skills.list
+      {skills.length > 0 && (
+        <div className="gos-nav-links" style={{ marginBottom: 4 }}>
+          {[
+            { key: "all", label: "ALL" },
+            { key: "in_progress", label: "IN PROGRESS" },
+            { key: "completed", label: "COMPLETED" },
+          ].map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={`gos-nav-btn ${filter === f.key ? "active" : ""}`}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
-        {skills.length === 0 ? (
+      )}
+
+      {skills.length === 0 ? (
+        <div className="gos-panel terminal-panel">
+          <div className="terminal-head">
+            <span className="terminal-dot" /> skills.list
+          </div>
           <p className="gos-empty-note" style={{ marginBottom: 0 }}>
             No skills yet — generate a roadmap for an AI-built list, or add one above.
           </p>
-        ) : (
-          skills.map((s) => (
-            <div className="roadmap-row" key={s.id}>
-              <span className="roadmap-row-title">{s.name}</span>
-              <StageRail
-                status={s.status}
-                disabled={updatingId === s.id}
-                onChange={(status) => setSkillStatus(s.id, status)}
-              />
+        </div>
+      ) : (
+        <>
+          <div className="gos-panel terminal-panel">
+            <div className="terminal-head">
+              <span className="terminal-dot" /> skills.from_roadmap
             </div>
-          ))
-        )}
-      </div>
+            {phaseOrder.length === 0 ? (
+              <p className="gos-empty-note" style={{ marginBottom: 0 }}>
+                {roadmapSkills.length === 0 && manualSkills.length > 0
+                  ? "No roadmap skills match this filter."
+                  : "Generate a roadmap to auto-populate this section, phase by phase."}
+              </p>
+            ) : (
+              phaseOrder.map((phaseTitle) => (
+                <div key={phaseTitle} style={{ marginBottom: 18 }}>
+                  <div className="flow-phase-marker" style={{ marginBottom: 8 }}>
+                    <span className="flow-phase-title">{phaseTitle}</span>
+                  </div>
+                  {roadmapByPhase[phaseTitle].map(renderRow)}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="gos-panel terminal-panel">
+            <div className="terminal-head">
+              <span className="terminal-dot" /> skills.self_added
+            </div>
+            {manualSkills.length === 0 ? (
+              <p className="gos-empty-note" style={{ marginBottom: 0 }}>
+                {skills.some((s) => s.source === "manual")
+                  ? "No self-added skills match this filter."
+                  : "Nothing here yet — anything you add above (outside the roadmap) shows up in this section."}
+              </p>
+            ) : (
+              manualSkills.map(renderRow)
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1624,6 +1741,14 @@ function JobsView({ onChanged }) {
 /* ============================================================
    Interview prep — question bank from the target career
    ============================================================ */
+
+const INTERVIEW_CAT_LABEL = {
+  dsa: "DSA",
+  system_design: "SYSTEM DESIGN",
+  domain: "DOMAIN",
+  behavioral: "BEHAVIORAL",
+  hr: "HR",
+};
 
 function InterviewView({ hasRecommendation, onChanged }) {
   const { token } = useAuth();
@@ -1870,7 +1995,7 @@ function Shell() {
 
   return (
     <div className="gos-app">
-      <Navbar view={view} setView={setView} />
+      <Navbar view={view} setView={setView} hasRecommendation={!!recommendation} />
       <div className="gos-main">
         {!token || !user ? (
           <AuthScreen />

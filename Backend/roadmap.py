@@ -1,5 +1,6 @@
 import os
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -183,6 +184,42 @@ def generate_item_guide(career_title: str, item_title: str, phase_title: str) ->
     return json.loads(response.text)
 
 
+def _build_guides_for_items(career_title: str, items: list[RoadmapItem]) -> dict[int, dict]:
+    """
+    Generate a guide for every item in one shot (called right after a roadmap
+    is created/regenerated) so item detail pages never have to hit the AI on
+    click - they just read what's already stored. Runs the calls concurrently
+    since doing 15-30 of these sequentially would make roadmap generation feel
+    like it hung. A guide that fails to generate here is simply skipped; the
+    /items/{id}/guide endpoint still generates-and-caches on demand as a
+    fallback, so one bad call never blocks the whole roadmap.
+    """
+    guides_by_item_id: dict[int, dict] = {}
+    if not items:
+        return guides_by_item_id
+
+    def _one(item: RoadmapItem):
+        content = generate_item_guide(
+            career_title=career_title,
+            item_title=item.title,
+            phase_title=item.phase_title or "",
+        )
+        return item.id, content
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = [pool.submit(_one, item) for item in items]
+        for future in as_completed(futures):
+            try:
+                item_id, content = future.result()
+                guides_by_item_id[item_id] = content
+            except Exception:
+                # one item's guide failing shouldn't fail roadmap creation -
+                # it'll just be generated on-demand the first time it's opened
+                continue
+
+    return guides_by_item_id
+
+
 CHAT_PROMPT = """
 You are a friendly, sharp mentor helping a computer science / tech student in India
 who is working through a learning roadmap. Answer their doubt about the specific
@@ -349,6 +386,19 @@ def generate_roadmap(
             db.query(RoadmapItemGuide).filter(
                 RoadmapItemGuide.roadmap_item_id.in_(old_ids)
             ).delete(synchronize_session=False)
+            # chat history is tied to the specific (now-replaced) item content,
+            # so it doesn't make sense to carry it over - drop it along with
+            # the guide rather than leaving it orphaned/blocking the delete.
+            db.query(RoadmapItemChat).filter(
+                RoadmapItemChat.roadmap_item_id.in_(old_ids)
+            ).delete(synchronize_session=False)
+            # Skill.roadmap_item_id is a FK into roadmap_items - unlink before
+            # deleting the old items or Postgres blocks the delete. The skill
+            # itself stays (so progress isn't lost) and _sync_skill_for_item
+            # re-links it to the matching new item by name below.
+            db.query(Skill).filter(Skill.roadmap_item_id.in_(old_ids)).update(
+                {Skill.roadmap_item_id: None}, synchronize_session=False
+            )
         db.query(RoadmapItem).filter(RoadmapItem.roadmap_id == existing.id).delete()
         existing.career_title = chosen["title"]
         roadmap = existing
@@ -377,6 +427,24 @@ def generate_roadmap(
             _sync_skill_for_item(db, user_id, new_item)
 
     db.commit()
+
+    # Generate + store every item's guide now, while we're already in the
+    # roadmap-creation flow, instead of burning a fresh AI call (and making
+    # the student wait) every time they open an item later.
+    new_items = (
+        db.query(RoadmapItem)
+        .filter(RoadmapItem.roadmap_id == roadmap.id)
+        .all()
+    )
+    try:
+        guides_by_item_id = _build_guides_for_items(roadmap.career_title, new_items)
+    except Exception:
+        guides_by_item_id = {}
+
+    for item_id, content in guides_by_item_id.items():
+        db.add(RoadmapItemGuide(roadmap_item_id=item_id, content=content))
+    if guides_by_item_id:
+        db.commit()
 
     return _serialize_roadmap(roadmap, db)
 

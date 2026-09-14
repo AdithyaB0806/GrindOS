@@ -122,6 +122,9 @@ export const api = {
       body: { status },
     }),
 
+  deleteSkill: ({ token, skillId }) =>
+    request(`/skills/${skillId}`, { method: "DELETE", token }),
+
   getRoadmapItemGuide: ({ token, itemId }) =>
     request(`/roadmap/items/${itemId}/guide`, { token }),
 
