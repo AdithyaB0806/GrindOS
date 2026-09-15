@@ -50,7 +50,8 @@ Time they can dedicate to learning each week:
 {study_time}
 
 Generate a structured, ordered, phase-based roadmap that takes them from where they are now to
-being job-ready for this career path. Each phase should build on the previous one. Keep each
+being job-ready for this career path.The tech stack should be of the latest requirnments of the company, Search for the latest requirements of the company and make sure you are aware of the latest technologies and tools that are in demand in the Indian job market. Each phase should be a logical step forward, with each item being a concrete skill or topic to learn.
+Each phase should build on the previous one. Keep each
 phase focused (roughly 3-6 items) and keep the whole roadmap realistic given their weekly study
 time. Order phases from foundational to advanced, ending with a project/portfolio phase.
 
