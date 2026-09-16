@@ -216,6 +216,18 @@ function Navbar({ view, setView, hasRecommendation }) {
           >
             INTERVIEW
           </button>
+          <button
+            className={`gos-nav-btn ${view === "resume" ? "active" : ""}`}
+            onClick={() => setView("resume")}
+          >
+            RESUME
+          </button>
+          <button
+            className={`gos-nav-btn ${view === "mock" ? "active" : ""}`}
+            onClick={() => setView("mock")}
+          >
+            MOCK PREP
+          </button>
         </div>
       )}
       <div className="gos-nav-user">
@@ -1951,6 +1963,989 @@ function InterviewView({ hasRecommendation, onChanged }) {
 }
 
 /* ============================================================
+   Resume studio — build (ATS-friendly template) or upload a
+   resume, tailor it to a JD, run an ATS check, generate a
+   matching cover letter.
+   ============================================================ */
+
+function emptyExperience() {
+  return { role: "", company: "", dates: "", bullets: [""] };
+}
+function emptyEducation() {
+  return { degree: "", institution: "", dates: "", details: "" };
+}
+function emptyProject() {
+  return { title: "", tech: "", bullets: [""] };
+}
+function emptyBuilderForm() {
+  return {
+    full_name: "",
+    email: "",
+    phone: "",
+    location: "",
+    linkedin: "",
+    github: "",
+    portfolio: "",
+    summary: "",
+    education: [emptyEducation()],
+    experience: [emptyExperience()],
+    projects: [emptyProject()],
+    skills: [""],
+    certifications: [""],
+  };
+}
+
+function StringListEditor({ label, items, onChange, placeholder }) {
+  const update = (i, val) => {
+    const next = [...items];
+    next[i] = val;
+    onChange(next);
+  };
+  const add = () => onChange([...items, ""]);
+  const remove = (i) => onChange(items.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="gos-field">
+      <label className="gos-label">{label}</label>
+      {items.map((val, i) => (
+        <div key={i} className="resume-list-row">
+          <input
+            className="gos-input"
+            value={val}
+            placeholder={placeholder}
+            onChange={(e) => update(i, e.target.value)}
+          />
+          {items.length > 1 && (
+            <button type="button" className="gos-btn gos-btn-ghost" onClick={() => remove(i)}>
+              ✕
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button" className="gos-btn gos-btn-ghost" onClick={add}>
+        + ADD
+      </button>
+    </div>
+  );
+}
+
+function BulletsEditor({ bullets, onChange }) {
+  const update = (i, val) => {
+    const next = [...bullets];
+    next[i] = val;
+    onChange(next);
+  };
+  const add = () => onChange([...bullets, ""]);
+  const remove = (i) => onChange(bullets.filter((_, idx) => idx !== i));
+
+  return (
+    <div>
+      {bullets.map((b, i) => (
+        <div key={i} className="resume-list-row">
+          <input
+            className="gos-input"
+            value={b}
+            placeholder="Impact-driven bullet — what you did, and the result"
+            onChange={(e) => update(i, e.target.value)}
+          />
+          {bullets.length > 1 && (
+            <button type="button" className="gos-btn gos-btn-ghost" onClick={() => remove(i)}>
+              ✕
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button" className="gos-btn gos-btn-ghost" onClick={add}>
+        + ADD BULLET
+      </button>
+    </div>
+  );
+}
+
+function ResumeBuilderForm({ initial, onSaved }) {
+  const { token } = useAuth();
+  const [form, setForm] = useState(initial || emptyBuilderForm());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const setField = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const updateEntry = (section, i, patch) => {
+    setForm((f) => {
+      const next = [...f[section]];
+      next[i] = { ...next[i], ...patch };
+      return { ...f, [section]: next };
+    });
+  };
+  const addEntry = (section, factory) =>
+    setForm((f) => ({ ...f, [section]: [...f[section], factory()] }));
+  const removeEntry = (section, i) =>
+    setForm((f) => ({ ...f, [section]: f[section].filter((_, idx) => idx !== i) }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const cleaned = {
+        ...form,
+        skills: form.skills.map((s) => s.trim()).filter(Boolean),
+        certifications: form.certifications.map((c) => c.trim()).filter(Boolean),
+        education: form.education.filter((ed) => ed.degree.trim() || ed.institution.trim()),
+        experience: form.experience
+          .filter((ex) => ex.role.trim() || ex.company.trim())
+          .map((ex) => ({ ...ex, bullets: ex.bullets.map((b) => b.trim()).filter(Boolean) })),
+        projects: form.projects
+          .filter((p) => p.title.trim())
+          .map((p) => ({ ...p, bullets: p.bullets.map((b) => b.trim()).filter(Boolean) })),
+      };
+      const saved = await api.buildResume({ token, data: cleaned });
+      onSaved(saved);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="gos-panel terminal-panel">
+      <div className="terminal-head">
+        <span className="terminal-dot" /> resume.builder
+      </div>
+      <Alert>{error}</Alert>
+
+      <div className="job-form">
+        <input className="gos-input" placeholder="Full name" value={form.full_name} onChange={setField("full_name")} required />
+        <input className="gos-input" placeholder="Email" value={form.email} onChange={setField("email")} required />
+        <input className="gos-input" placeholder="Phone" value={form.phone} onChange={setField("phone")} />
+        <input className="gos-input" placeholder="Location (city, state)" value={form.location} onChange={setField("location")} />
+        <input className="gos-input" placeholder="LinkedIn URL" value={form.linkedin} onChange={setField("linkedin")} />
+        <input className="gos-input" placeholder="GitHub URL" value={form.github} onChange={setField("github")} />
+        <input className="gos-input job-notes" placeholder="Portfolio URL" value={form.portfolio} onChange={setField("portfolio")} />
+      </div>
+
+      <div className="gos-field" style={{ marginTop: 16 }}>
+        <label className="gos-label">Summary</label>
+        <textarea
+          className="gos-input"
+          rows={3}
+          placeholder="2-3 lines on who you are and what you're aiming for"
+          value={form.summary}
+          onChange={setField("summary")}
+        />
+      </div>
+
+      <h3 className="guide-h">Education</h3>
+      {form.education.map((ed, i) => (
+        <div key={i} className="resume-entry-block">
+          <div className="job-form">
+            <input
+              className="gos-input"
+              placeholder="Degree (e.g. BCA - Data Science)"
+              value={ed.degree}
+              onChange={(e) => updateEntry("education", i, { degree: e.target.value })}
+            />
+            <input
+              className="gos-input"
+              placeholder="Institution"
+              value={ed.institution}
+              onChange={(e) => updateEntry("education", i, { institution: e.target.value })}
+            />
+            <input
+              className="gos-input"
+              placeholder="Dates (e.g. 2023 - 2027)"
+              value={ed.dates}
+              onChange={(e) => updateEntry("education", i, { dates: e.target.value })}
+            />
+            <input
+              className="gos-input"
+              placeholder="CGPA / details (optional)"
+              value={ed.details}
+              onChange={(e) => updateEntry("education", i, { details: e.target.value })}
+            />
+          </div>
+          {form.education.length > 1 && (
+            <button type="button" className="gos-btn gos-btn-ghost" onClick={() => removeEntry("education", i)}>
+              REMOVE
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button" className="gos-btn gos-btn-ghost" onClick={() => addEntry("education", emptyEducation)}>
+        + ADD EDUCATION
+      </button>
+
+      <h3 className="guide-h" style={{ marginTop: 20 }}>
+        Experience (optional)
+      </h3>
+      {form.experience.map((ex, i) => (
+        <div key={i} className="resume-entry-block">
+          <div className="job-form">
+            <input
+              className="gos-input"
+              placeholder="Role / title"
+              value={ex.role}
+              onChange={(e) => updateEntry("experience", i, { role: e.target.value })}
+            />
+            <input
+              className="gos-input"
+              placeholder="Company"
+              value={ex.company}
+              onChange={(e) => updateEntry("experience", i, { company: e.target.value })}
+            />
+            <input
+              className="gos-input job-notes"
+              placeholder="Dates (e.g. Jun 2025 - Aug 2025)"
+              value={ex.dates}
+              onChange={(e) => updateEntry("experience", i, { dates: e.target.value })}
+            />
+          </div>
+          <BulletsEditor bullets={ex.bullets} onChange={(bullets) => updateEntry("experience", i, { bullets })} />
+          {form.experience.length > 1 && (
+            <button type="button" className="gos-btn gos-btn-ghost" onClick={() => removeEntry("experience", i)}>
+              REMOVE
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button" className="gos-btn gos-btn-ghost" onClick={() => addEntry("experience", emptyExperience)}>
+        + ADD EXPERIENCE
+      </button>
+
+      <h3 className="guide-h" style={{ marginTop: 20 }}>
+        Projects
+      </h3>
+      {form.projects.map((p, i) => (
+        <div key={i} className="resume-entry-block">
+          <div className="job-form">
+            <input
+              className="gos-input"
+              placeholder="Project title"
+              value={p.title}
+              onChange={(e) => updateEntry("projects", i, { title: e.target.value })}
+            />
+            <input
+              className="gos-input job-notes"
+              placeholder="Tech stack"
+              value={p.tech}
+              onChange={(e) => updateEntry("projects", i, { tech: e.target.value })}
+            />
+          </div>
+          <BulletsEditor bullets={p.bullets} onChange={(bullets) => updateEntry("projects", i, { bullets })} />
+          {form.projects.length > 1 && (
+            <button type="button" className="gos-btn gos-btn-ghost" onClick={() => removeEntry("projects", i)}>
+              REMOVE
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button" className="gos-btn gos-btn-ghost" onClick={() => addEntry("projects", emptyProject)}>
+        + ADD PROJECT
+      </button>
+
+      <div style={{ marginTop: 20 }}>
+        <StringListEditor
+          label="Skills"
+          items={form.skills}
+          onChange={(skills) => setForm((f) => ({ ...f, skills }))}
+          placeholder="e.g. Python"
+        />
+        <StringListEditor
+          label="Certifications"
+          items={form.certifications}
+          onChange={(certifications) => setForm((f) => ({ ...f, certifications }))}
+          placeholder="e.g. AWS Cloud Practitioner"
+        />
+      </div>
+
+      <button className="gos-btn gos-btn-primary" style={{ width: "auto", marginTop: 8 }} disabled={saving}>
+        {saving ? "SAVING…" : "SAVE RESUME"}
+      </button>
+    </form>
+  );
+}
+
+function ResumeUploadPanel({ onUploaded }) {
+  const { token } = useAuth();
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    try {
+      const saved = await api.uploadResume({ token, file });
+      onUploaded(saved);
+      setFile(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="gos-panel terminal-panel">
+      <div className="terminal-head">
+        <span className="terminal-dot" /> resume.upload
+      </div>
+      <Alert>{error}</Alert>
+      <p className="gos-empty-note" style={{ marginBottom: 12 }}>
+        Upload a PDF or DOCX — GrindOS pulls the text out for tailoring, ATS checks, and cover
+        letters.
+      </p>
+      <input
+        className="gos-input"
+        type="file"
+        accept=".pdf,.docx"
+        onChange={(e) => setFile(e.target.files?.[0] || null)}
+      />
+      <button className="gos-btn gos-btn-primary" style={{ width: "auto", marginTop: 12 }} disabled={!file || uploading}>
+        {uploading ? "UPLOADING…" : "UPLOAD RESUME"}
+      </button>
+    </form>
+  );
+}
+
+function ResumeTailorPanel() {
+  const { token } = useAuth();
+  const [jd, setJd] = useState("");
+  const [tailored, setTailored] = useState("");
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+
+  const tailor = async (e) => {
+    e.preventDefault();
+    if (!jd.trim()) return;
+    setWorking(true);
+    setError("");
+    try {
+      const res = await api.tailorResume({ token, jdText: jd.trim() });
+      setTailored(res.tailored_text || "");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const download = async () => {
+    try {
+      await api.downloadTailoredResume(token);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  return (
+    <div className="gos-panel terminal-panel">
+      <div className="terminal-head">
+        <span className="terminal-dot" /> tailor_to_jd
+      </div>
+      <Alert>{error}</Alert>
+      <p className="gos-empty-note" style={{ marginBottom: 12 }}>
+        Paste a job description — GrindOS rewrites your resume to mirror it, without inventing
+        anything you haven't actually done.
+      </p>
+      <form onSubmit={tailor}>
+        <textarea
+          className="gos-input rec-feedback-input"
+          rows={5}
+          placeholder="Paste the job description here…"
+          value={jd}
+          onChange={(e) => setJd(e.target.value)}
+          disabled={working}
+        />
+        <div className="rec-actions-row">
+          <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} disabled={working || !jd.trim()}>
+            {working ? "TAILORING…" : "TAILOR RESUME"}
+          </button>
+          {tailored && (
+            <button type="button" className="gos-btn gos-btn-ghost" onClick={download}>
+              DOWNLOAD TAILORED .DOCX
+            </button>
+          )}
+        </div>
+      </form>
+      {tailored && (
+        <div style={{ marginTop: 16 }}>
+          <h3 className="guide-h">Tailored preview</h3>
+          <pre className="resume-preview-text">{tailored}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AtsCheckPanel() {
+  const { token } = useAuth();
+  const [jd, setJd] = useState("");
+  const [result, setResult] = useState(null);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+
+  const check = async (e) => {
+    e.preventDefault();
+    setWorking(true);
+    setError("");
+    try {
+      const res = await api.checkAts({ token, jdText: jd.trim() || undefined });
+      setResult(res);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div className="gos-panel terminal-panel">
+      <div className="terminal-head">
+        <span className="terminal-dot" /> ats_checker
+      </div>
+      <Alert>{error}</Alert>
+      <p className="gos-empty-note" style={{ marginBottom: 12 }}>
+        Optionally paste a job description for a keyword match check, or leave it blank for a
+        general ATS/formatting review.
+      </p>
+      <form onSubmit={check}>
+        <textarea
+          className="gos-input rec-feedback-input"
+          rows={4}
+          placeholder="Job description (optional)…"
+          value={jd}
+          onChange={(e) => setJd(e.target.value)}
+          disabled={working}
+        />
+        <button className="gos-btn gos-btn-primary" style={{ width: "auto", marginTop: 12 }} disabled={working}>
+          {working ? "CHECKING…" : "CHECK ATS SCORE"}
+        </button>
+      </form>
+
+      {result && (
+        <div style={{ marginTop: 20 }}>
+          <div className="stat-inline-row" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+            <div className="stat-inline">
+              <span className="stat-inline-val">{result.ats_score}</span>
+              <span className="stat-inline-key">ATS SCORE / 100</span>
+            </div>
+          </div>
+          <p className="guide-summary">{result.verdict}</p>
+
+          {result.strengths?.length > 0 && (
+            <>
+              <h3 className="guide-h">Strengths</h3>
+              <ul className="guide-list">
+                {result.strengths.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {result.formatting_issues?.length > 0 && (
+            <>
+              <h3 className="guide-h">Formatting issues</h3>
+              <ul className="guide-list">
+                {result.formatting_issues.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {result.content_issues?.length > 0 && (
+            <>
+              <h3 className="guide-h">Content issues</h3>
+              <ul className="guide-list">
+                {result.content_issues.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {result.missing_keywords?.length > 0 && (
+            <>
+              <h3 className="guide-h">Missing keywords</h3>
+              <div className="filter-row">
+                {result.missing_keywords.map((k, i) => (
+                  <span key={i} className="job-chip">
+                    {k}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+          {result.quick_fixes?.length > 0 && (
+            <>
+              <h3 className="guide-h">Quick fixes</h3>
+              <ul className="guide-list">
+                {result.quick_fixes.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CoverLetterPanel() {
+  const { token } = useAuth();
+  const [company, setCompany] = useState("");
+  const [role, setRole] = useState("");
+  const [jd, setJd] = useState("");
+  const [letter, setLetter] = useState("");
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .getCoverLetter(token)
+      .then((data) => {
+        if (data?.content) {
+          setLetter(data.content);
+          setCompany(data.company || "");
+          setRole(data.role || "");
+        }
+      })
+      .catch(() => {
+        /* no saved cover letter yet */
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const generate = async (e) => {
+    e.preventDefault();
+    if (!jd.trim()) return;
+    setWorking(true);
+    setError("");
+    try {
+      const res = await api.generateCoverLetter({ token, jdText: jd.trim(), company, role });
+      setLetter(res.content);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const copy = () => {
+    navigator.clipboard?.writeText(letter);
+  };
+
+  return (
+    <div className="gos-panel terminal-panel">
+      <div className="terminal-head">
+        <span className="terminal-dot" /> cover_letter
+      </div>
+      <Alert>{error}</Alert>
+      <form onSubmit={generate}>
+        <div className="job-form">
+          <input className="gos-input" placeholder="Company" value={company} onChange={(e) => setCompany(e.target.value)} />
+          <input className="gos-input" placeholder="Role" value={role} onChange={(e) => setRole(e.target.value)} />
+        </div>
+        <textarea
+          className="gos-input rec-feedback-input"
+          rows={5}
+          style={{ marginTop: 10 }}
+          placeholder="Paste the job description here…"
+          value={jd}
+          onChange={(e) => setJd(e.target.value)}
+          disabled={working}
+        />
+        <div className="rec-actions-row">
+          <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} disabled={working || !jd.trim()}>
+            {working ? "WRITING…" : "GENERATE COVER LETTER"}
+          </button>
+          {letter && (
+            <button type="button" className="gos-btn gos-btn-ghost" onClick={copy}>
+              COPY TO CLIPBOARD
+            </button>
+          )}
+        </div>
+      </form>
+      {letter && (
+        <div style={{ marginTop: 16 }}>
+          <pre className="resume-preview-text">{letter}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RESUME_TABS = [
+  { key: "overview", label: "OVERVIEW" },
+  { key: "tailor", label: "TAILOR TO JD" },
+  { key: "ats", label: "ATS CHECKER" },
+  { key: "cover", label: "COVER LETTER" },
+];
+
+function ResumeView() {
+  const { token } = useAuth();
+  const [resume, setResume] = useState(undefined);
+  const [mode, setMode] = useState(null); // null | "build" | "upload"
+  const [tab, setTab] = useState("overview");
+  const [error, setError] = useState("");
+
+  const load = () => {
+    api
+      .getResume(token)
+      .then((data) => setResume(data && data.raw_text ? data : null))
+      .catch((err) => setError(errorMessage(err)));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onSaved = (saved) => {
+    setResume(saved);
+    setMode(null);
+    setTab("overview");
+  };
+
+  const download = async () => {
+    try {
+      await api.downloadBuiltResume(token);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  if (resume === undefined) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading resume studio…
+      </div>
+    );
+  }
+
+  return (
+    <div className="gos-shell gos-shell-wide">
+      <div>
+        <div className="gos-eyebrow">Resume studio</div>
+        <h1 className="gos-title">Resume, cover letters & ATS</h1>
+        <p className="gos-subtitle">
+          Build an ATS-friendly resume from scratch, or upload one you already have — then
+          tailor it to a job description, check how it scores against an ATS, and generate a
+          matching cover letter.
+        </p>
+      </div>
+
+      <Alert>{error}</Alert>
+
+      {!resume && mode === null && (
+        <div className="gos-panel terminal-panel">
+          <div className="terminal-head">
+            <span className="terminal-dot" /> get_started
+          </div>
+          <p className="gos-empty-note" style={{ marginBottom: 16 }}>
+            No resume on file yet. Build one with GrindOS's ATS-friendly template, or upload
+            one you already have.
+          </p>
+          <div className="rec-actions-row">
+            <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={() => setMode("build")}>
+              BUILD MY FIRST RESUME
+            </button>
+            <button className="gos-btn gos-btn-ghost" onClick={() => setMode("upload")}>
+              UPLOAD AN EXISTING RESUME
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mode === "build" && (
+        <>
+          <ResumeBuilderForm initial={resume?.builder_data} onSaved={onSaved} />
+          {resume && (
+            <button className="gos-btn gos-btn-ghost" onClick={() => setMode(null)}>
+              ← BACK TO OVERVIEW
+            </button>
+          )}
+        </>
+      )}
+
+      {mode === "upload" && (
+        <>
+          <ResumeUploadPanel onUploaded={onSaved} />
+          {resume && (
+            <button className="gos-btn gos-btn-ghost" onClick={() => setMode(null)}>
+              ← BACK TO OVERVIEW
+            </button>
+          )}
+        </>
+      )}
+
+      {resume && mode === null && (
+        <>
+          <div className="filter-row">
+            {RESUME_TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                className={`filter-chip ${tab === t.key ? "active" : ""}`}
+                onClick={() => setTab(t.key)}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "overview" && (
+            <div className="gos-panel terminal-panel">
+              <div className="terminal-head">
+                <span className="terminal-dot" /> resume.current
+              </div>
+              <div className="terminal-row">
+                <span className="terminal-row-key">SOURCE</span>
+                <span className="terminal-row-val">
+                  {resume.source === "built" ? "Built in GrindOS" : "Uploaded"}
+                </span>
+              </div>
+              <div className="terminal-row">
+                <span className="terminal-row-key">TITLE / FILE</span>
+                <span className="terminal-row-val">{resume.file_name || resume.title}</span>
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <h3 className="guide-h">Preview</h3>
+                <pre className="resume-preview-text">{resume.raw_text}</pre>
+              </div>
+              <div className="rec-actions-row" style={{ marginTop: 16 }}>
+                {resume.source === "built" && (
+                  <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={download}>
+                    DOWNLOAD AS .DOCX
+                  </button>
+                )}
+                <button className="gos-btn gos-btn-ghost" onClick={() => setMode("build")}>
+                  {resume.source === "built" ? "EDIT BUILT RESUME" : "BUILD ONE INSTEAD"}
+                </button>
+                <button className="gos-btn gos-btn-ghost" onClick={() => setMode("upload")}>
+                  REPLACE WITH UPLOAD
+                </button>
+              </div>
+            </div>
+          )}
+
+          {tab === "tailor" && <ResumeTailorPanel />}
+          {tab === "ats" && <AtsCheckPanel />}
+          {tab === "cover" && <CoverLetterPanel />}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
+   Mock interview — likely-question set with free-text answers
+   and direct AI feedback (separate from the interview-prep bank)
+   ============================================================ */
+
+function MockInterviewView({ hasRecommendation }) {
+  const { token } = useAuth();
+  const [session, setSession] = useState(undefined);
+  const [error, setError] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [answers, setAnswers] = useState({});
+  const [submittingId, setSubmittingId] = useState(null);
+
+  const load = () => {
+    api
+      .getMockInterview(token)
+      .then((data) => setSession(data && data.questions ? data : null))
+      .catch((err) => setError(errorMessage(err)));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const generate = async (regenerate) => {
+    if (
+      regenerate &&
+      !window.confirm("Regenerate the mock interview? Your answers and feedback will reset.")
+    ) {
+      return;
+    }
+    setGenerating(true);
+    setError("");
+    try {
+      const data = await api.generateMockInterview({ token, regenerate });
+      setSession(data);
+      setAnswers({});
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const submitAnswer = async (questionId) => {
+    const answer = (answers[questionId] || "").trim();
+    if (!answer) return;
+    setSubmittingId(questionId);
+    setError("");
+    try {
+      const updated = await api.answerMockQuestion({ token, questionId, answer });
+      setSession((s) => ({
+        ...s,
+        answered: s.questions.find((q) => q.id === questionId)?.status === "answered" ? s.answered : s.answered + 1,
+        questions: s.questions.map((q) => (q.id === questionId ? updated : q)),
+      }));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
+  if (session === undefined) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading mock interview…
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="gos-shell">
+        <div>
+          <div className="gos-eyebrow">Mock interview</div>
+          <h1 className="gos-title">No mock interview set yet</h1>
+          <p className="gos-subtitle">
+            {hasRecommendation
+              ? "Get a set of likely interview questions for your target career. Answer each in your own words and get direct feedback."
+              : "Complete the assessment first so questions match your career path."}
+          </p>
+        </div>
+        <Alert>{error}</Alert>
+        <div className="gos-panel terminal-panel">
+          <button
+            className="gos-btn gos-btn-primary"
+            style={{ width: "auto" }}
+            disabled={!hasRecommendation || generating}
+            onClick={() => generate(false)}
+          >
+            {generating ? "BUILDING…" : "GENERATE MOCK INTERVIEW"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="gos-shell gos-shell-wide">
+      <div>
+        <div className="gos-eyebrow">Mock interview</div>
+        <h1 className="gos-title">{session.career_title || "Mock interview"}</h1>
+        <p className="gos-subtitle">
+          Answer each question in your own words, then submit for direct feedback — strengths,
+          gaps, and what a strong answer would cover.
+        </p>
+      </div>
+
+      <Alert>{error}</Alert>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> mock.progress
+        </div>
+        <div className="stat-inline-row" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+          <div className="stat-inline">
+            <span className="stat-inline-val">{session.total}</span>
+            <span className="stat-inline-key">QUESTIONS</span>
+          </div>
+          <div className="stat-inline">
+            <span className="stat-inline-val">{session.answered}</span>
+            <span className="stat-inline-key">ANSWERED</span>
+          </div>
+        </div>
+        <div style={{ marginTop: 16, textAlign: "right" }}>
+          <button className="gos-btn gos-btn-ghost" onClick={() => generate(true)} disabled={generating}>
+            {generating ? "REBUILDING…" : "REGENERATE"}
+          </button>
+        </div>
+      </div>
+
+      {session.questions.map((q) => (
+        <div className="gos-panel terminal-panel interview-q is-open" key={q.id}>
+          <span className="interview-cat">{INTERVIEW_CAT_LABEL[q.category] || q.category}</span>
+          <span className="interview-prompt">{q.prompt}</span>
+
+          <div style={{ marginTop: 14 }}>
+            <textarea
+              className="gos-input rec-feedback-input"
+              rows={4}
+              placeholder="Type your answer here…"
+              value={answers[q.id] ?? q.user_answer ?? ""}
+              onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+              disabled={submittingId === q.id}
+            />
+            <button
+              type="button"
+              className="gos-btn gos-btn-primary"
+              style={{ width: "auto", marginTop: 8 }}
+              disabled={submittingId === q.id || !(answers[q.id] ?? q.user_answer ?? "").trim()}
+              onClick={() => submitAnswer(q.id)}
+            >
+              {submittingId === q.id
+                ? "GETTING FEEDBACK…"
+                : q.status === "answered"
+                  ? "RE-SUBMIT ANSWER"
+                  : "SUBMIT ANSWER"}
+            </button>
+          </div>
+
+          {q.feedback && (
+            <div className="interview-body">
+              <div className="stat-inline-row" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
+                <div className="stat-inline">
+                  <span className="stat-inline-val">{q.feedback.score}/10</span>
+                  <span className="stat-inline-key">SCORE</span>
+                </div>
+              </div>
+              {q.feedback.strengths?.length > 0 && (
+                <>
+                  <h3 className="guide-h">Strengths</h3>
+                  <ul className="guide-list">
+                    {q.feedback.strengths.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {q.feedback.improvements?.length > 0 && (
+                <>
+                  <h3 className="guide-h">Improvements</h3>
+                  <ul className="guide-list">
+                    {q.feedback.improvements.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {q.feedback.model_answer_tip && (
+                <>
+                  <h3 className="guide-h">What a strong answer covers</h3>
+                  <p className="guide-summary">{q.feedback.model_answer_tip}</p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================
    Root shell — routes between auth / assessment / dashboard /
    roadmap / skills / jobs / interview
    ============================================================ */
@@ -2034,6 +3029,10 @@ function Shell() {
           <JobsView onChanged={bumpDash} />
         ) : view === "interview" ? (
           <InterviewView hasRecommendation={!!recommendation} onChanged={bumpDash} />
+        ) : view === "resume" ? (
+          <ResumeView />
+        ) : view === "mock" ? (
+          <MockInterviewView hasRecommendation={!!recommendation} />
         ) : (
           <Dashboard
             justSubmitted={justSubmitted}

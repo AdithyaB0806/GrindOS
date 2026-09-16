@@ -1542,3 +1542,45 @@ a {
   padding-top: 12px;
   border-top: 1px solid var(--border-soft);
 }
+
+/* ============================================================
+   Resume studio — builder list/bullet rows, entry blocks, and
+   the monospace preview used for raw/tailored resume text and
+   cover letters.
+   ============================================================ */
+
+.resume-list-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.resume-list-row .gos-input {
+  flex: 1;
+}
+
+.resume-entry-block {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 10px;
+}
+
+.resume-entry-block:last-of-type {
+  border-bottom: none;
+}
+
+.resume-preview-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  max-height: 420px;
+  overflow-y: auto;
+  margin: 0;
+}

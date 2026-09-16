@@ -116,3 +116,72 @@ class InterviewQuestion(Base):
     # not_started | practicing | nailed
     # not_started | practicing | nailed
     status = Column(String, default="not_started")
+
+
+class Resume(Base):
+    __tablename__ = "resumes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+    # "built" | "uploaded"
+    source = Column(String)
+    title = Column(String, nullable=True)
+
+    # set when source == "uploaded"
+    file_name = Column(String, nullable=True)
+    file_type = Column(String, nullable=True)  # pdf | docx
+
+    # plain-text version of the resume — either extracted from the
+    # uploaded file, or rendered from builder_data. This is what gets
+    # fed to the AI for tailoring / ATS checks / cover letters.
+    raw_text = Column(String, nullable=True)
+
+    # structured form data, only present when source == "built"
+    builder_data = Column(JSON, nullable=True)
+
+    # latest JD-tailored version (plain text) and the JD it was tailored for
+    tailored_text = Column(String, nullable=True)
+    tailored_for_jd = Column(String, nullable=True)
+
+    # latest ATS check result
+    # {"ats_score":.., "verdict":.., "formatting_issues":[...], ...}
+    ats = Column(JSON, nullable=True)
+
+
+class CoverLetter(Base):
+    __tablename__ = "cover_letters"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+    company = Column(String, nullable=True)
+    role = Column(String, nullable=True)
+    jd_text = Column(String, nullable=True)
+    content = Column(String)
+
+
+class MockInterviewSession(Base):
+    __tablename__ = "mock_interview_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    career_title = Column(String, nullable=True)
+
+
+class MockInterviewQuestion(Base):
+    __tablename__ = "mock_interview_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("mock_interview_sessions.id"))
+
+    # dsa | system_design | behavioral | domain | hr
+    category = Column(String)
+    prompt = Column(String)
+
+    user_answer = Column(String, nullable=True)
+    # {"score":.., "strengths":[...], "improvements":[...], "model_answer_tip":..}
+    feedback = Column(JSON, nullable=True)
+
+    # unanswered | answered
+    status = Column(String, default="unanswered")

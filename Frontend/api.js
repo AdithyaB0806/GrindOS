@@ -49,6 +49,38 @@ async function request(path, { method = "GET", body, token, query } = {}) {
   return payload;
 }
 
+async function requestBlob(path, token) {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const payload = await res.json();
+      detail = payload.detail || payload.message || detail;
+    } catch {
+      /* not json */
+    }
+    throw new ApiError(detail, res.status, null);
+  }
+  const disposition = res.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const filename = match ? match[1] : "resume.docx";
+  const blob = await res.blob();
+  return { blob, filename };
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   register: ({ name, email, password }) =>
     request("/register", { method: "POST", body: { name, email, password } }),
@@ -167,6 +199,73 @@ export const api = {
       method: "PATCH",
       token,
       body: { status },
+    }),
+
+  // ---- Resume studio ----
+
+  getResume: (token) => request("/resume/", { token }),
+
+  buildResume: ({ token, data }) =>
+    request("/resume/build", { method: "POST", token, body: data }),
+
+  downloadBuiltResume: async (token) => {
+    const { blob, filename } = await requestBlob("/resume/build/download", token);
+    triggerDownload(blob, filename);
+  },
+
+  uploadResume: async ({ token, file }) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_BASE_URL}/resume/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    const isJson = res.headers.get("content-type")?.includes("application/json");
+    const payload = isJson ? await res.json().catch(() => null) : null;
+    if (!res.ok) {
+      const detail = (payload && (payload.detail || payload.message)) || res.statusText;
+      throw new ApiError(detail, res.status, payload);
+    }
+    return payload;
+  },
+
+  tailorResume: ({ token, jdText }) =>
+    request("/resume/tailor", { method: "POST", token, body: { jd_text: jdText } }),
+
+  downloadTailoredResume: async (token) => {
+    const { blob, filename } = await requestBlob("/resume/tailor/download", token);
+    triggerDownload(blob, filename);
+  },
+
+  checkAts: ({ token, jdText }) =>
+    request("/resume/ats-check", { method: "POST", token, body: { jd_text: jdText || null } }),
+
+  generateCoverLetter: ({ token, jdText, company, role }) =>
+    request("/resume/cover-letter", {
+      method: "POST",
+      token,
+      body: { jd_text: jdText, company: company || null, role: role || null },
+    }),
+
+  getCoverLetter: (token) => request("/resume/cover-letter", { token }),
+
+  // ---- Mock interview ----
+
+  getMockInterview: (token) => request("/mock-interview/", { token }),
+
+  generateMockInterview: ({ token, regenerate = false } = {}) =>
+    request("/mock-interview/generate", {
+      method: "POST",
+      token,
+      query: regenerate ? { regenerate: "true" } : {},
+    }),
+
+  answerMockQuestion: ({ token, questionId, answer }) =>
+    request(`/mock-interview/questions/${questionId}/answer`, {
+      method: "POST",
+      token,
+      body: { answer },
     }),
 };
 
