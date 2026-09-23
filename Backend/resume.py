@@ -1,9 +1,9 @@
 import os
 import io
 import json
+
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from openai import OpenAI
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -11,16 +11,42 @@ from sqlalchemy.orm import Session
 
 from Backend.database import get_db
 from Backend.models import Resume, CoverLetter, Recommendation, User
-from Backend.schemas import ResumeBuilderData, ResumeTailorRequest, AtsCheckRequest, CoverLetterRequest
+from Backend.schemas import (
+    ResumeBuilderData,
+    ResumeTailorRequest,
+    AtsCheckRequest,
+    CoverLetterRequest,
+)
 from Backend.auth import get_current_user
 
+
+# ============================================================
+# Environment / AI Client
+# ============================================================
+
 load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+if not GROQ_API_KEY:
+    raise RuntimeError("GROQ_API_KEY is not set in the environment.")
+
+client = OpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1",
+)
+
 
 router = APIRouter(prefix="/resume", tags=["Resume"])
 
+
+# ============================================================
+# Constants
+# ============================================================
+
 ALLOWED_UPLOAD_TYPES = {"pdf", "docx"}
-GEMINI_MODEL = "gemini-3.6-flash"
+
+GROQ_MODEL = "openai/gpt-oss-20b"
 
 
 # ============================================================
@@ -61,6 +87,7 @@ Rules:
 - Keep every string under 20 words. Max 6 items per list.
 """
 
+
 TAILOR_PROMPT = """
 You are a resume writer helping a student tailor their resume to a specific job description,
 for the Indian tech job market. Keep the output strictly ATS-friendly: plain text only,
@@ -84,6 +111,7 @@ Job description:
 Return ONLY the tailored resume as plain text, ready to be pasted into a document - no
 commentary, no markdown formatting, no explanations before or after.
 """
+
 
 COVER_LETTER_PROMPT = """
 You are helping a student write a concise, honest, non-generic cover letter for a job in the
@@ -119,11 +147,14 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
     import pdfplumber
 
     parts = []
+
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             text = page.extract_text()
+
             if text:
                 parts.append(text)
+
     return "\n".join(parts).strip()
 
 
@@ -131,11 +162,14 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
     import docx
 
     document = docx.Document(io.BytesIO(file_bytes))
-    return "\n".join(p.text for p in document.paragraphs if p.text.strip())
+
+    return "\n".join(
+        p.text for p in document.paragraphs if p.text.strip()
+    )
 
 
 # ============================================================
-# Rendering helpers (builder data -> ATS-friendly text / docx)
+# Rendering helpers
 # ============================================================
 
 def _contact_line(data: dict) -> str:
@@ -147,62 +181,155 @@ def _contact_line(data: dict) -> str:
         data.get("github"),
         data.get("portfolio"),
     ]
-    return " | ".join(b for b in bits if b)
+
+    return " | ".join(
+        b for b in bits if b
+    )
 
 
 def render_resume_text(data: dict) -> str:
-    lines = [data.get("full_name", "").strip()]
+    lines = [
+        data.get("full_name", "").strip()
+    ]
+
     contact = _contact_line(data)
+
     if contact:
         lines.append(contact)
 
+    # Summary
     if data.get("summary"):
-        lines += ["", "SUMMARY", data["summary"].strip()]
+        lines += [
+            "",
+            "SUMMARY",
+            data["summary"].strip(),
+        ]
 
-    experience = [e for e in data.get("experience", []) if e.get("role") or e.get("company")]
+    # Experience
+    experience = [
+        e
+        for e in data.get("experience", [])
+        if e.get("role") or e.get("company")
+    ]
+
     if experience:
-        lines += ["", "EXPERIENCE"]
+        lines += [
+            "",
+            "EXPERIENCE",
+        ]
+
         for exp in experience:
-            head = " - ".join(b for b in [exp.get("role", ""), exp.get("company", "")] if b)
+            head = " - ".join(
+                b
+                for b in [
+                    exp.get("role", ""),
+                    exp.get("company", ""),
+                ]
+                if b
+            )
+
             if exp.get("dates"):
                 head += f" ({exp['dates']})"
+
             lines.append(head)
+
             for bullet in exp.get("bullets", []):
                 if bullet.strip():
-                    lines.append(f"- {bullet.strip()}")
+                    lines.append(
+                        f"- {bullet.strip()}"
+                    )
 
-    projects = [p for p in data.get("projects", []) if p.get("title")]
+    # Projects
+    projects = [
+        p
+        for p in data.get("projects", [])
+        if p.get("title")
+    ]
+
     if projects:
-        lines += ["", "PROJECTS"]
+        lines += [
+            "",
+            "PROJECTS",
+        ]
+
         for proj in projects:
             head = proj.get("title", "")
+
             if proj.get("tech"):
                 head += f" ({proj['tech']})"
+
             lines.append(head)
+
             for bullet in proj.get("bullets", []):
                 if bullet.strip():
-                    lines.append(f"- {bullet.strip()}")
+                    lines.append(
+                        f"- {bullet.strip()}"
+                    )
 
-    education = [e for e in data.get("education", []) if e.get("degree") or e.get("institution")]
+    # Education
+    education = [
+        e
+        for e in data.get("education", [])
+        if e.get("degree") or e.get("institution")
+    ]
+
     if education:
-        lines += ["", "EDUCATION"]
+        lines += [
+            "",
+            "EDUCATION",
+        ]
+
         for edu in education:
-            head = " - ".join(b for b in [edu.get("degree", ""), edu.get("institution", "")] if b)
+            head = " - ".join(
+                b
+                for b in [
+                    edu.get("degree", ""),
+                    edu.get("institution", ""),
+                ]
+                if b
+            )
+
             if edu.get("dates"):
                 head += f" ({edu['dates']})"
+
             lines.append(head)
+
             if edu.get("details"):
-                lines.append(edu["details"])
+                lines.append(
+                    edu["details"]
+                )
 
-    skills = [s for s in data.get("skills", []) if s.strip()]
+    # Skills
+    skills = [
+        s
+        for s in data.get("skills", [])
+        if s.strip()
+    ]
+
     if skills:
-        lines += ["", "SKILLS", ", ".join(skills)]
+        lines += [
+            "",
+            "SKILLS",
+            ", ".join(skills),
+        ]
 
-    certs = [c for c in data.get("certifications", []) if c.strip()]
+    # Certifications
+    certs = [
+        c
+        for c in data.get("certifications", [])
+        if c.strip()
+    ]
+
     if certs:
-        lines += ["", "CERTIFICATIONS"]
+        lines += [
+            "",
+            "CERTIFICATIONS",
+        ]
+
         for c in certs:
-            lines.append(f"- {c}")
+            lines.append(
+                f"- {c}"
+            )
 
     return "\n".join(lines).strip()
 
@@ -212,103 +339,235 @@ def render_resume_docx(data: dict) -> bytes:
     from docx.shared import Pt
 
     doc = Document()
+
     style = doc.styles["Normal"]
     style.font.name = "Calibri"
     style.font.size = Pt(10.5)
 
+    # Name
     name_p = doc.add_paragraph()
-    name_run = name_p.add_run(data.get("full_name", "").strip())
+
+    name_run = name_p.add_run(
+        data.get("full_name", "").strip()
+    )
+
     name_run.bold = True
     name_run.font.size = Pt(18)
 
+    # Contact
     contact = _contact_line(data)
+
     if contact:
         doc.add_paragraph(contact)
 
+    # Summary
     if data.get("summary"):
-        doc.add_heading("Summary", level=2)
-        doc.add_paragraph(data["summary"].strip())
+        doc.add_heading(
+            "Summary",
+            level=2
+        )
 
-    experience = [e for e in data.get("experience", []) if e.get("role") or e.get("company")]
+        doc.add_paragraph(
+            data["summary"].strip()
+        )
+
+    # Experience
+    experience = [
+        e
+        for e in data.get("experience", [])
+        if e.get("role") or e.get("company")
+    ]
+
     if experience:
-        doc.add_heading("Experience", level=2)
+        doc.add_heading(
+            "Experience",
+            level=2
+        )
+
         for exp in experience:
             p = doc.add_paragraph()
-            head = " — ".join(b for b in [exp.get("role", ""), exp.get("company", "")] if b)
+
+            head = " — ".join(
+                b
+                for b in [
+                    exp.get("role", ""),
+                    exp.get("company", ""),
+                ]
+                if b
+            )
+
             run = p.add_run(head)
             run.bold = True
+
             if exp.get("dates"):
-                p.add_run(f"  ({exp['dates']})")
+                p.add_run(
+                    f"  ({exp['dates']})"
+                )
+
             for bullet in exp.get("bullets", []):
                 if bullet.strip():
-                    doc.add_paragraph(bullet.strip(), style="List Bullet")
+                    doc.add_paragraph(
+                        bullet.strip(),
+                        style="List Bullet"
+                    )
 
-    projects = [pr for pr in data.get("projects", []) if pr.get("title")]
+    # Projects
+    projects = [
+        pr
+        for pr in data.get("projects", [])
+        if pr.get("title")
+    ]
+
     if projects:
-        doc.add_heading("Projects", level=2)
+        doc.add_heading(
+            "Projects",
+            level=2
+        )
+
         for proj in projects:
             p = doc.add_paragraph()
-            run = p.add_run(proj.get("title", ""))
+
+            run = p.add_run(
+                proj.get("title", "")
+            )
+
             run.bold = True
+
             if proj.get("tech"):
-                p.add_run(f"  ({proj['tech']})")
+                p.add_run(
+                    f"  ({proj['tech']})"
+                )
+
             for bullet in proj.get("bullets", []):
                 if bullet.strip():
-                    doc.add_paragraph(bullet.strip(), style="List Bullet")
+                    doc.add_paragraph(
+                        bullet.strip(),
+                        style="List Bullet"
+                    )
 
-    education = [e for e in data.get("education", []) if e.get("degree") or e.get("institution")]
+    # Education
+    education = [
+        e
+        for e in data.get("education", [])
+        if e.get("degree") or e.get("institution")
+    ]
+
     if education:
-        doc.add_heading("Education", level=2)
+        doc.add_heading(
+            "Education",
+            level=2
+        )
+
         for edu in education:
             p = doc.add_paragraph()
-            head = " — ".join(b for b in [edu.get("degree", ""), edu.get("institution", "")] if b)
+
+            head = " — ".join(
+                b
+                for b in [
+                    edu.get("degree", ""),
+                    edu.get("institution", ""),
+                ]
+                if b
+            )
+
             run = p.add_run(head)
             run.bold = True
+
             if edu.get("dates"):
-                p.add_run(f"  ({edu['dates']})")
+                p.add_run(
+                    f"  ({edu['dates']})"
+                )
+
             if edu.get("details"):
-                doc.add_paragraph(edu["details"])
+                doc.add_paragraph(
+                    edu["details"]
+                )
 
-    skills = [s for s in data.get("skills", []) if s.strip()]
+    # Skills
+    skills = [
+        s
+        for s in data.get("skills", [])
+        if s.strip()
+    ]
+
     if skills:
-        doc.add_heading("Skills", level=2)
-        doc.add_paragraph(", ".join(skills))
+        doc.add_heading(
+            "Skills",
+            level=2
+        )
 
-    certs = [c for c in data.get("certifications", []) if c.strip()]
+        doc.add_paragraph(
+            ", ".join(skills)
+        )
+
+    # Certifications
+    certs = [
+        c
+        for c in data.get("certifications", [])
+        if c.strip()
+    ]
+
     if certs:
-        doc.add_heading("Certifications", level=2)
+        doc.add_heading(
+            "Certifications",
+            level=2
+        )
+
         for c in certs:
-            doc.add_paragraph(c, style="List Bullet")
+            doc.add_paragraph(
+                c,
+                style="List Bullet"
+            )
 
     buf = io.BytesIO()
+
     doc.save(buf)
+
     return buf.getvalue()
 
 
 def text_to_docx(text: str) -> bytes:
-    """Generic plain-text -> docx renderer, used for the AI-tailored resume text
-    (which comes back as ATS-style plain text with ALL-CAPS headers and '-' bullets)."""
+    """
+    Generic plain-text -> docx renderer, used for the AI-tailored resume text.
+    """
+
     from docx import Document
     from docx.shared import Pt
 
     doc = Document()
+
     style = doc.styles["Normal"]
     style.font.name = "Calibri"
     style.font.size = Pt(10.5)
 
     for raw_line in text.split("\n"):
+
         line = raw_line.strip()
+
         if not line:
             doc.add_paragraph("")
+
         elif line.isupper() and len(line) < 40:
-            doc.add_heading(line.title(), level=2)
-        elif line.startswith(("-", "•", "*")):
-            doc.add_paragraph(line.lstrip("-•* ").strip(), style="List Bullet")
+            doc.add_heading(
+                line.title(),
+                level=2
+            )
+
+        elif line.startswith(
+            ("-", "•", "*")
+        ):
+            doc.add_paragraph(
+                line.lstrip("-•* ").strip(),
+                style="List Bullet"
+            )
+
         else:
             doc.add_paragraph(line)
 
     buf = io.BytesIO()
+
     doc.save(buf)
+
     return buf.getvalue()
 
 
@@ -316,11 +575,22 @@ def text_to_docx(text: str) -> bytes:
 # Shared helpers
 # ============================================================
 
-def _get_resume(db: Session, user_id: int) -> Resume | None:
-    return db.query(Resume).filter(Resume.user_id == user_id).first()
+def _get_resume(
+    db: Session,
+    user_id: int
+) -> Resume | None:
+
+    return (
+        db.query(Resume)
+        .filter(
+            Resume.user_id == user_id
+        )
+        .first()
+    )
 
 
 def _serialize(r: Resume) -> dict:
+
     return {
         "id": r.id,
         "source": r.source,
@@ -335,22 +605,47 @@ def _serialize(r: Resume) -> dict:
     }
 
 
-def _call_gemini_json(prompt: str) -> dict:
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
+# ============================================================
+# Groq AI helpers
+# ============================================================
+
+def _call_groq_text(prompt: str) -> str:
+
+    response = client.responses.create(
+        model=GROQ_MODEL,
+        input=prompt,
     )
-    return json.loads(response.text)
+
+    return response.output_text.strip()
 
 
-def _call_gemini_text(prompt: str) -> str:
-    response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-    return response.text.strip()
+def _call_groq_json(prompt: str) -> dict:
+
+    response = client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        response_format={
+            "type": "json_object"
+        },
+    )
+
+    content = response.choices[0].message.content
+
+    if not content:
+        raise ValueError(
+            "Groq returned an empty response."
+        )
+
+    return json.loads(content)
 
 
 # ============================================================
-# Build (ATS-friendly resume from structured form data)
+# Build
 # ============================================================
 
 @router.post("/build")
@@ -359,55 +654,104 @@ def build_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    builder_data = data.model_dump()
-    text = render_resume_text(builder_data)
 
-    resume = _get_resume(db, current_user.id)
+    builder_data = data.model_dump()
+
+    text = render_resume_text(
+        builder_data
+    )
+
+    resume = _get_resume(
+        db,
+        current_user.id
+    )
+
     if resume:
+
         resume.source = "built"
-        resume.title = builder_data.get("full_name") or resume.title or "My Resume"
+
+        resume.title = (
+            builder_data.get("full_name")
+            or resume.title
+            or "My Resume"
+        )
+
         resume.file_name = None
         resume.file_type = None
+
         resume.raw_text = text
+
         resume.builder_data = builder_data
+
         resume.tailored_text = None
         resume.tailored_for_jd = None
         resume.ats = None
+
     else:
+
         resume = Resume(
             user_id=current_user.id,
             source="built",
-            title=builder_data.get("full_name") or "My Resume",
+            title=(
+                builder_data.get("full_name")
+                or "My Resume"
+            ),
             raw_text=text,
             builder_data=builder_data,
         )
+
         db.add(resume)
 
     db.commit()
     db.refresh(resume)
+
     return _serialize(resume)
 
+
+# ============================================================
+# Download built resume
+# ============================================================
 
 @router.get("/build/download")
 def download_built_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = _get_resume(db, current_user.id)
-    if not resume or not resume.builder_data:
-        raise HTTPException(status_code=404, detail="Build a resume first")
 
-    docx_bytes = render_resume_docx(resume.builder_data)
-    filename = f"{(resume.title or 'resume').strip().replace(' ', '_')}.docx"
+    resume = _get_resume(
+        db,
+        current_user.id
+    )
+
+    if not resume or not resume.builder_data:
+        raise HTTPException(
+            status_code=404,
+            detail="Build a resume first"
+        )
+
+    docx_bytes = render_resume_docx(
+        resume.builder_data
+    )
+
+    filename = (
+        f"{(resume.title or 'resume').strip().replace(' ', '_')}.docx"
+    )
+
     return StreamingResponse(
         io.BytesIO(docx_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="{filename}"'
+        },
     )
 
 
 # ============================================================
-# Upload (parse an existing PDF / DOCX resume)
+# Upload
 # ============================================================
 
 @router.post("/upload")
@@ -416,34 +760,74 @@ async def upload_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+
+    ext = (
+        (file.filename or "")
+        .rsplit(".", 1)[-1]
+        .lower()
+    )
+
     if ext not in ALLOWED_UPLOAD_TYPES:
-        raise HTTPException(status_code=400, detail="Only PDF and DOCX files are supported")
-
-    content = await file.read()
-    try:
-        text = extract_text_from_pdf(content) if ext == "pdf" else extract_text_from_docx(content)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Couldn't read that file: {str(e)}")
-
-    if not text.strip():
         raise HTTPException(
             status_code=400,
-            detail="Couldn't extract any text from that file - is it a scanned/image resume?",
+            detail="Only PDF and DOCX files are supported"
         )
 
-    resume = _get_resume(db, current_user.id)
+    content = await file.read()
+
+    try:
+
+        if ext == "pdf":
+            text = extract_text_from_pdf(
+                content
+            )
+
+        else:
+            text = extract_text_from_docx(
+                content
+            )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"Couldn't read that file: {str(e)}"
+        )
+
+    if not text.strip():
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Couldn't extract any text from that file - "
+                "is it a scanned/image resume?"
+            ),
+        )
+
+    resume = _get_resume(
+        db,
+        current_user.id
+    )
+
     if resume:
+
         resume.source = "uploaded"
+
         resume.title = file.filename
+
         resume.file_name = file.filename
         resume.file_type = ext
+
         resume.raw_text = text
+
         resume.builder_data = None
+
         resume.tailored_text = None
         resume.tailored_for_jd = None
         resume.ats = None
+
     else:
+
         resume = Resume(
             user_id=current_user.id,
             source="uploaded",
@@ -452,10 +836,12 @@ async def upload_resume(
             file_type=ext,
             raw_text=text,
         )
+
         db.add(resume)
 
     db.commit()
     db.refresh(resume)
+
     return _serialize(resume)
 
 
@@ -468,14 +854,22 @@ def get_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = _get_resume(db, current_user.id)
+
+    resume = _get_resume(
+        db,
+        current_user.id
+    )
+
     if not resume:
-        return {"message": "No resume yet"}
+        return {
+            "message": "No resume yet"
+        }
+
     return _serialize(resume)
 
 
 # ============================================================
-# Tailor to a job description
+# Tailor resume
 # ============================================================
 
 @router.post("/tailor")
@@ -484,38 +878,93 @@ def tailor_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = _get_resume(db, current_user.id)
-    if not resume or not resume.raw_text:
-        raise HTTPException(status_code=404, detail="Build or upload a resume first")
 
-    prompt = TAILOR_PROMPT.format(resume_text=resume.raw_text, jd_text=payload.jd_text.strip())
+    resume = _get_resume(
+        db,
+        current_user.id
+    )
+
+    if not resume or not resume.raw_text:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Build or upload a resume first"
+        )
+
+    prompt = TAILOR_PROMPT.format(
+        resume_text=resume.raw_text,
+        jd_text=payload.jd_text.strip(),
+    )
+
     try:
-        tailored = _call_gemini_text(prompt)
+
+        tailored = _call_groq_text(
+            prompt
+        )
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI tailoring failed: {str(e)}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI tailoring failed: {str(e)}"
+        )
 
     resume.tailored_text = tailored
-    resume.tailored_for_jd = payload.jd_text
+
+    resume.tailored_for_jd = (
+        payload.jd_text
+    )
+
     db.commit()
     db.refresh(resume)
+
     return _serialize(resume)
 
+
+# ============================================================
+# Download tailored resume
+# ============================================================
 
 @router.get("/tailor/download")
 def download_tailored_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = _get_resume(db, current_user.id)
-    if not resume or not resume.tailored_text:
-        raise HTTPException(status_code=404, detail="Tailor a resume to a job description first")
 
-    docx_bytes = text_to_docx(resume.tailored_text)
-    filename = f"{(resume.title or 'resume').strip().replace(' ', '_')}_tailored.docx"
+    resume = _get_resume(
+        db,
+        current_user.id
+    )
+
+    if not resume or not resume.tailored_text:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Tailor a resume to a job "
+                "description first"
+            ),
+        )
+
+    docx_bytes = text_to_docx(
+        resume.tailored_text
+    )
+
+    filename = (
+        f"{(resume.title or 'resume').strip().replace(' ', '_')}"
+        "_tailored.docx"
+    )
+
     return StreamingResponse(
         io.BytesIO(docx_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="{filename}"'
+        },
     )
 
 
@@ -529,20 +978,51 @@ def ats_check(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = _get_resume(db, current_user.id)
-    if not resume or not resume.raw_text:
-        raise HTTPException(status_code=404, detail="Build or upload a resume first")
 
-    jd_text = payload.jd_text.strip() if payload.jd_text and payload.jd_text.strip() else "None provided."
-    prompt = ATS_PROMPT.format(resume_text=resume.raw_text, jd_text=jd_text)
+    resume = _get_resume(
+        db,
+        current_user.id
+    )
+
+    if not resume or not resume.raw_text:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Build or upload a resume first"
+        )
+
+    if (
+        payload.jd_text
+        and payload.jd_text.strip()
+    ):
+        jd_text = payload.jd_text.strip()
+
+    else:
+        jd_text = "None provided."
+
+    prompt = ATS_PROMPT.format(
+        resume_text=resume.raw_text,
+        jd_text=jd_text,
+    )
+
     try:
-        result = _call_gemini_json(prompt)
+
+        result = _call_groq_json(
+            prompt
+        )
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ATS check failed: {str(e)}")
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"ATS check failed: {str(e)}"
+        )
 
     resume.ats = result
+
     db.commit()
     db.refresh(resume)
+
     return result
 
 
@@ -556,29 +1036,68 @@ def generate_cover_letter(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    resume = _get_resume(db, current_user.id)
+
+    resume = _get_resume(
+        db,
+        current_user.id
+    )
+
     if not resume or not resume.raw_text:
-        raise HTTPException(status_code=404, detail="Build or upload a resume first")
+
+        raise HTTPException(
+            status_code=404,
+            detail="Build or upload a resume first"
+        )
 
     prompt = COVER_LETTER_PROMPT.format(
         resume_text=resume.raw_text,
         jd_text=payload.jd_text.strip(),
-        company=payload.company or "the company",
-        role=payload.role or "the role",
+        company=(
+            payload.company
+            or "the company"
+        ),
+        role=(
+            payload.role
+            or "the role"
+        ),
     )
-    try:
-        content = _call_gemini_text(prompt)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Cover letter generation failed: {str(e)}")
 
-    existing = db.query(CoverLetter).filter(CoverLetter.user_id == current_user.id).first()
+    try:
+
+        content = _call_groq_text(
+            prompt
+        )
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Cover letter generation failed: "
+                f"{str(e)}"
+            ),
+        )
+
+    existing = (
+        db.query(CoverLetter)
+        .filter(
+            CoverLetter.user_id
+            == current_user.id
+        )
+        .first()
+    )
+
     if existing:
+
         existing.company = payload.company
         existing.role = payload.role
         existing.jd_text = payload.jd_text
         existing.content = content
+
         letter = existing
+
     else:
+
         letter = CoverLetter(
             user_id=current_user.id,
             company=payload.company,
@@ -586,19 +1105,48 @@ def generate_cover_letter(
             jd_text=payload.jd_text,
             content=content,
         )
+
         db.add(letter)
 
     db.commit()
     db.refresh(letter)
-    return {"id": letter.id, "company": letter.company, "role": letter.role, "content": letter.content}
 
+    return {
+        "id": letter.id,
+        "company": letter.company,
+        "role": letter.role,
+        "content": letter.content,
+    }
+
+
+# ============================================================
+# Get cover letter
+# ============================================================
 
 @router.get("/cover-letter")
 def get_cover_letter(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    letter = db.query(CoverLetter).filter(CoverLetter.user_id == current_user.id).first()
+
+    letter = (
+        db.query(CoverLetter)
+        .filter(
+            CoverLetter.user_id
+            == current_user.id
+        )
+        .first()
+    )
+
     if not letter:
-        return {"message": "No cover letter yet"}
-    return {"id": letter.id, "company": letter.company, "role": letter.role, "content": letter.content}
+
+        return {
+            "message": "No cover letter yet"
+        }
+
+    return {
+        "id": letter.id,
+        "company": letter.company,
+        "role": letter.role,
+        "content": letter.content,
+    }
