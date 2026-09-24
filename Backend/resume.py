@@ -1,6 +1,9 @@
+#resume.py
 import os
 import io
 import json
+
+import re
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -712,44 +715,25 @@ def build_resume(
 # Download built resume
 # ============================================================
 
+
+def _safe_filename(title, suffix=""):
+    stem = re.sub(r"\.(pdf|docx)$", "", title or "resume", flags=re.I)
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "_", stem).strip("_") or "resume"
+    return f"{stem}{suffix}.docx"
+
 @router.get("/build/download")
-def download_built_resume(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-
-    resume = _get_resume(
-        db,
-        current_user.id
-    )
-
-    if not resume or not resume.builder_data:
-        raise HTTPException(
-            status_code=404,
-            detail="Build a resume first"
-        )
-
-    docx_bytes = render_resume_docx(
-        resume.builder_data
-    )
-
-    filename = (
-        f"{(resume.title or 'resume').strip().replace(' ', '_')}.docx"
-    )
-
-    return StreamingResponse(
-        io.BytesIO(docx_bytes),
-        media_type=(
-            "application/vnd.openxmlformats-officedocument."
-            "wordprocessingml.document"
-        ),
-        headers={
-            "Content-Disposition":
-                f'attachment; filename="{filename}"'
-        },
-    )
-
-
+def download_built_resume(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    resume = _get_resume(db, current_user.id)
+    if not resume:
+        raise HTTPException(404, "Build or upload a resume first")
+    if resume.builder_data:
+        docx_bytes = render_resume_docx(resume.builder_data)
+    elif resume.raw_text:
+        docx_bytes = text_to_docx(resume.raw_text)
+    else:
+        raise HTTPException(404, "Build or upload a resume first")
+    filename = _safe_filename(resume.title)
+    ...
 # ============================================================
 # Upload
 # ============================================================
