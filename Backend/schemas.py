@@ -121,6 +121,11 @@ class EducationEntry(BaseModel):
     details: str = ""
 
 
+class LinkEntry(BaseModel):
+    label: str = ""
+    url: str = ""
+
+
 class ExperienceEntry(BaseModel):
     role: str = ""
     company: str = ""
@@ -131,6 +136,7 @@ class ExperienceEntry(BaseModel):
 class ProjectEntry(BaseModel):
     title: str = ""
     tech: str = ""
+    link: str = ""  # e.g. GitHub / live demo URL
     bullets: List[str] = []
 
 
@@ -148,6 +154,14 @@ class ResumeBuilderData(BaseModel):
     projects: List[ProjectEntry] = []
     skills: List[str] = []
     certifications: List[str] = []
+    # extra clickable links (LeetCode, Kaggle, blog ...)
+    links: List[LinkEntry] = []
+    # order of sections: summary | experience | projects | education | skills | certifications
+    section_order: List[str] = []
+
+
+class SectionOrderUpdate(BaseModel):
+    section_order: List[str]
 
 
 class ResumeTailorRequest(BaseModel):
@@ -168,3 +182,28 @@ class CoverLetterRequest(BaseModel):
 
 class MockInterviewAnswer(BaseModel):
     answer: str
+
+# ---------- Admin ----------
+
+class RoleUpdate(BaseModel):
+    role: str  # user | admin
+
+
+class QuestionCreate(BaseModel):
+    key: str
+    question: str
+    type: str = "single_choice"
+    options: List[str]
+    allow_other: bool = True
+    is_active: bool = True
+
+
+class QuestionUpdate(BaseModel):
+    question: str | None = None
+    options: List[str] | None = None
+    allow_other: bool | None = None
+    is_active: bool | None = None
+
+
+class QuestionReorder(BaseModel):
+    ids: List[int]

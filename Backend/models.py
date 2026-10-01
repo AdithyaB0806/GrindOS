@@ -1,4 +1,4 @@
-from sqlalchemy import Column,Integer,String,JSON, ForeignKey
+from sqlalchemy import Column,Integer,String,JSON,ForeignKey,Boolean
 from Backend.database import Base
 
 class User(Base):
@@ -12,6 +12,9 @@ class User(Base):
     email=Column(String,unique=True,index=True)
 
     password=Column(String)
+
+    # "user" | "admin"
+    role=Column(String,default="user",server_default="user")
 
 class Assessment(Base):
     __tablename__="assessments"
@@ -185,3 +188,19 @@ class MockInterviewQuestion(Base):
 
     # unanswered | answered
     status = Column(String, default="unanswered")
+
+class AssessmentQuestion(Base):
+    __tablename__ = "assessment_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # stable identifier - saved answers and the AI prompt are keyed by this,
+    # so it is not editable after creation
+    key = Column(String, unique=True, index=True)
+
+    question = Column(String)
+    type = Column(String, default="single_choice")
+    options = Column(JSON)
+    allow_other = Column(Boolean, default=True)
+    order_index = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)

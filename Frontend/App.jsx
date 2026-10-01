@@ -228,6 +228,14 @@ function Navbar({ view, setView, hasRecommendation }) {
           >
             MOCK PREP
           </button>
+          {user.role === "admin" && (
+            <button
+              className={`gos-nav-btn admin-nav ${view === "admin" ? "active" : ""}`}
+              onClick={() => setView("admin")}
+            >
+              ADMIN
+            </button>
+          )}
         </div>
       )}
       <div className="gos-nav-user">
@@ -235,6 +243,7 @@ function Navbar({ view, setView, hasRecommendation }) {
           <>
             <span className="gos-user-chip">
               <strong>{user.name}</strong>
+              {user.role === "admin" && <span className="admin-badge">ADMIN</span>}
             </span>
             <button className="gos-btn" onClick={logout}>
               LOG OUT
@@ -383,6 +392,14 @@ function Assessment({ onDone }) {
     return (
       <div className="gos-loading">
         <span className="gos-spinner" /> Loading assessment…
+      </div>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="gos-panel assess-card">
+        <Alert kind="info">The assessment isn't available right now. Check back soon.</Alert>
       </div>
     );
   }
@@ -2946,6 +2963,483 @@ function MockInterviewView({ hasRecommendation }) {
 }
 
 /* ============================================================
+   Admin panel — only reachable for role === "admin" (the backend
+   enforces this too; hiding the button is just UX)
+   ============================================================ */
+
+function slugifyKey(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+}
+
+const ADMIN_STAT_LABELS = [
+  ["users", "USERS"],
+  ["admins", "ADMINS"],
+  ["assessments_taken", "ASSESSMENTS"],
+  ["recommendations", "RECOMMENDATIONS"],
+  ["resumes", "RESUMES"],
+  ["job_applications", "JOB APPLICATIONS"],
+  ["mock_interview_sessions", "MOCK SESSIONS"],
+  ["questions_active", "ACTIVE QUESTIONS"],
+];
+
+function AdminOverview() {
+  const { token } = useAuth();
+  const [stats, setStats] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .adminStats(token)
+      .then(setStats)
+      .catch((err) => setError(errorMessage(err)));
+  }, [token]);
+
+  if (error) return <Alert>{error}</Alert>;
+  if (!stats) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading stats…
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-stat-grid">
+      {ADMIN_STAT_LABELS.map(([key, label]) => (
+        <div className="gos-panel admin-stat" key={key}>
+          <div className="admin-stat-value">{stats[key] ?? 0}</div>
+          <div className="admin-stat-label">{label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const emptyQuestionForm = () => ({
+  key: "",
+  question: "",
+  optionsText: "",
+  allow_other: true,
+});
+
+const parseOptions = (text) =>
+  text
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+function AdminQuestions() {
+  const { token } = useAuth();
+  const [questions, setQuestions] = useState(undefined);
+  const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [form, setForm] = useState(emptyQuestionForm());
+  const [creating, setCreating] = useState(false);
+
+  const load = () => {
+    api
+      .adminListQuestions(token)
+      .then(setQuestions)
+      .catch((err) => setError(errorMessage(err)));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const replaceQuestion = (updated) =>
+    setQuestions((list) => list.map((x) => (x.id === updated.id ? updated : x)));
+
+  const startEdit = (q) => {
+    setEditingId(q.id);
+    setDraft({
+      question: q.question,
+      optionsText: q.options.join("\n"),
+      allow_other: q.allow_other,
+    });
+  };
+
+  const saveEdit = async (q) => {
+    setBusyId(q.id);
+    setError("");
+    try {
+      const updated = await api.adminUpdateQuestion({
+        token,
+        questionId: q.id,
+        question: draft.question,
+        options: parseOptions(draft.optionsText),
+        allow_other: draft.allow_other,
+      });
+      replaceQuestion(updated);
+      setEditingId(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleActive = async (q) => {
+    setBusyId(q.id);
+    setError("");
+    try {
+      const updated = await api.adminUpdateQuestion({
+        token,
+        questionId: q.id,
+        is_active: !q.is_active,
+      });
+      replaceQuestion(updated);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const remove = async (q) => {
+    if (
+      !window.confirm(
+        "Delete this question for good? Hiding it instead keeps it around but removes it from the quiz."
+      )
+    )
+      return;
+    setBusyId(q.id);
+    setError("");
+    try {
+      await api.adminDeleteQuestion({ token, questionId: q.id });
+      setQuestions((list) => list.filter((x) => x.id !== q.id));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const move = async (index, direction) => {
+    const target = index + direction;
+    if (target < 0 || target >= questions.length) return;
+    const next = [...questions];
+    [next[index], next[target]] = [next[target], next[index]];
+    setQuestions(next);
+    try {
+      await api.adminReorderQuestions({ token, ids: next.map((x) => x.id) });
+    } catch (err) {
+      setError(errorMessage(err));
+      load();
+    }
+  };
+
+  const create = async (e) => {
+    e.preventDefault();
+    setCreating(true);
+    setError("");
+    try {
+      const created = await api.adminCreateQuestion({
+        token,
+        key: form.key.trim() || slugifyKey(form.question),
+        question: form.question,
+        options: parseOptions(form.optionsText),
+        allow_other: form.allow_other,
+      });
+      setQuestions((list) => [...list, created]);
+      setForm(emptyQuestionForm());
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (questions === undefined) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading questions…
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Alert>{error}</Alert>
+      <Alert kind="info">
+        Students see only active questions, in this order. Changes apply to the next
+        assessment someone takes — existing answers and recommendations are left alone.
+      </Alert>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> add.question
+        </div>
+        <form className="admin-form" onSubmit={create}>
+          <input
+            className="gos-input"
+            placeholder="Question text"
+            value={form.question}
+            onChange={(e) => setForm((f) => ({ ...f, question: e.target.value }))}
+            required
+          />
+          <input
+            className="gos-input"
+            placeholder="key (optional — auto-generated from the question)"
+            value={form.key}
+            onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
+          />
+          <textarea
+            className="gos-input"
+            placeholder={"Options — one per line (at least 2)"}
+            value={form.optionsText}
+            onChange={(e) => setForm((f) => ({ ...f, optionsText: e.target.value }))}
+            required
+          />
+          <label className="admin-check">
+            <input
+              type="checkbox"
+              checked={form.allow_other}
+              onChange={(e) => setForm((f) => ({ ...f, allow_other: e.target.checked }))}
+            />
+            allow free-text “Other”
+          </label>
+          <button
+            className="gos-btn gos-btn-primary"
+            style={{ width: "auto" }}
+            disabled={creating}
+          >
+            {creating ? "ADDING…" : "ADD QUESTION"}
+          </button>
+        </form>
+      </div>
+
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> questions.list
+        </div>
+        {questions.length === 0 ? (
+          <p className="gos-empty-note" style={{ marginBottom: 0 }}>
+            No questions yet.
+          </p>
+        ) : (
+          questions.map((q, index) => (
+            <div className="admin-q-row" key={q.id}>
+              <div className="admin-q-index">{String(index + 1).padStart(2, "0")}</div>
+              <div className="admin-q-main">
+                {editingId === q.id ? (
+                  <div className="admin-form">
+                    <input
+                      className="gos-input"
+                      value={draft.question}
+                      onChange={(e) => setDraft((d) => ({ ...d, question: e.target.value }))}
+                    />
+                    <textarea
+                      className="gos-input"
+                      value={draft.optionsText}
+                      onChange={(e) => setDraft((d) => ({ ...d, optionsText: e.target.value }))}
+                    />
+                    <label className="admin-check">
+                      <input
+                        type="checkbox"
+                        checked={draft.allow_other}
+                        onChange={(e) =>
+                          setDraft((d) => ({ ...d, allow_other: e.target.checked }))
+                        }
+                      />
+                      allow free-text “Other”
+                    </label>
+                    <div className="admin-q-actions">
+                      <button
+                        type="button"
+                        className="gos-btn gos-btn-primary"
+                        style={{ width: "auto" }}
+                        disabled={busyId === q.id}
+                        onClick={() => saveEdit(q)}
+                      >
+                        SAVE
+                      </button>
+                      <button
+                        type="button"
+                        className="gos-btn gos-btn-ghost"
+                        onClick={() => setEditingId(null)}
+                      >
+                        CANCEL
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="roadmap-item-title">
+                      {q.question}
+                      {!q.is_active && <span className="admin-badge hidden">HIDDEN</span>}
+                    </div>
+                    <div className="roadmap-item-desc">
+                      <span className="admin-key">{q.key}</span> · {q.options.join(" / ")}
+                    </div>
+                  </>
+                )}
+              </div>
+              {editingId !== q.id && (
+                <div className="admin-q-actions">
+                  <button
+                    type="button"
+                    className="gos-btn gos-btn-ghost"
+                    disabled={index === 0}
+                    onClick={() => move(index, -1)}
+                    aria-label="Move up"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="gos-btn gos-btn-ghost"
+                    disabled={index === questions.length - 1}
+                    onClick={() => move(index, 1)}
+                    aria-label="Move down"
+                  >
+                    ↓
+                  </button>
+                  <button type="button" className="gos-btn gos-btn-ghost" onClick={() => startEdit(q)}>
+                    EDIT
+                  </button>
+                  <button
+                    type="button"
+                    className="gos-btn gos-btn-ghost"
+                    disabled={busyId === q.id}
+                    onClick={() => toggleActive(q)}
+                  >
+                    {q.is_active ? "HIDE" : "SHOW"}
+                  </button>
+                  <button
+                    type="button"
+                    className="gos-btn gos-btn-ghost"
+                    disabled={busyId === q.id}
+                    onClick={() => remove(q)}
+                  >
+                    DELETE
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+function AdminUsers() {
+  const { token, user: me } = useAuth();
+  const [users, setUsers] = useState(undefined);
+  const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState(null);
+
+  useEffect(() => {
+    api
+      .adminListUsers(token)
+      .then(setUsers)
+      .catch((err) => setError(errorMessage(err)));
+  }, [token]);
+
+  const toggleRole = async (u) => {
+    const role = u.role === "admin" ? "user" : "admin";
+    const verb = role === "admin" ? "Make" : "Remove admin from";
+    if (!window.confirm(`${verb} ${u.email}${role === "admin" ? " an admin" : ""}?`)) return;
+    setBusyId(u.id);
+    setError("");
+    try {
+      const res = await api.adminSetRole({ token, userId: u.id, role });
+      setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, role: res.role } : x)));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (users === undefined && !error) {
+    return (
+      <div className="gos-loading">
+        <span className="gos-spinner" /> Loading users…
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Alert>{error}</Alert>
+      <div className="gos-panel terminal-panel">
+        <div className="terminal-head">
+          <span className="terminal-dot" /> users.list
+        </div>
+        {(users || []).map((u) => (
+          <div className="job-row" key={u.id}>
+            <div className="job-row-main">
+              <div className="roadmap-item-title">
+                {u.name}
+                {u.role === "admin" && <span className="admin-badge">ADMIN</span>}
+              </div>
+              <div className="roadmap-item-desc">
+                {u.email} · {u.has_assessment ? "assessment done" : "no assessment yet"}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="gos-btn gos-btn-ghost"
+              disabled={u.id === me?.id || busyId === u.id}
+              onClick={() => toggleRole(u)}
+            >
+              {u.role === "admin" ? "REMOVE ADMIN" : "MAKE ADMIN"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function AdminView() {
+  const [tab, setTab] = useState("overview");
+  const tabs = [
+    ["overview", "OVERVIEW"],
+    ["questions", "QUESTIONS"],
+    ["users", "USERS"],
+  ];
+
+  return (
+    <div className="gos-shell gos-shell-wide">
+      <div>
+        <div className="gos-eyebrow">Control room</div>
+        <h1 className="gos-title">Admin panel</h1>
+        <p className="gos-subtitle">
+          Manage the assessment, keep an eye on usage, and control who has admin access.
+        </p>
+      </div>
+
+      <div className="filter-row">
+        {tabs.map(([id, label]) => (
+          <button
+            type="button"
+            key={id}
+            className={`filter-chip ${tab === id ? "active" : ""}`}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "overview" && <AdminOverview />}
+      {tab === "questions" && <AdminQuestions />}
+      {tab === "users" && <AdminUsers />}
+    </div>
+  );
+}
+
+/* ============================================================
    Root shell — routes between auth / assessment / dashboard /
    roadmap / skills / jobs / interview
    ============================================================ */
@@ -3033,6 +3527,8 @@ function Shell() {
           <ResumeView />
         ) : view === "mock" ? (
           <MockInterviewView hasRecommendation={!!recommendation} />
+        ) : view === "admin" && user.role === "admin" ? (
+          <AdminView />
         ) : (
           <Dashboard
             justSubmitted={justSubmitted}

@@ -18,9 +18,16 @@ from Backend.schemas import (
     ResumeBuilderData,
     ResumeTailorRequest,
     AtsCheckRequest,
+    SectionOrderUpdate,
     CoverLetterRequest,
 )
 from Backend.auth import get_current_user
+from Backend.resumerender import (
+    render_text as render_resume_text,
+    render_docx as render_resume_docx,
+    render_html as render_resume_html,
+    resolve_order,
+)
 
 
 # ============================================================
@@ -175,358 +182,9 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
 # Rendering helpers
 # ============================================================
 
-def _contact_line(data: dict) -> str:
-    bits = [
-        data.get("email"),
-        data.get("phone"),
-        data.get("location"),
-        data.get("linkedin"),
-        data.get("github"),
-        data.get("portfolio"),
-    ]
-
-    return " | ".join(
-        b for b in bits if b
-    )
-
-
-def render_resume_text(data: dict) -> str:
-    lines = [
-        data.get("full_name", "").strip()
-    ]
-
-    contact = _contact_line(data)
-
-    if contact:
-        lines.append(contact)
-
-    # Summary
-    if data.get("summary"):
-        lines += [
-            "",
-            "SUMMARY",
-            data["summary"].strip(),
-        ]
-
-    # Experience
-    experience = [
-        e
-        for e in data.get("experience", [])
-        if e.get("role") or e.get("company")
-    ]
-
-    if experience:
-        lines += [
-            "",
-            "EXPERIENCE",
-        ]
-
-        for exp in experience:
-            head = " - ".join(
-                b
-                for b in [
-                    exp.get("role", ""),
-                    exp.get("company", ""),
-                ]
-                if b
-            )
-
-            if exp.get("dates"):
-                head += f" ({exp['dates']})"
-
-            lines.append(head)
-
-            for bullet in exp.get("bullets", []):
-                if bullet.strip():
-                    lines.append(
-                        f"- {bullet.strip()}"
-                    )
-
-    # Projects
-    projects = [
-        p
-        for p in data.get("projects", [])
-        if p.get("title")
-    ]
-
-    if projects:
-        lines += [
-            "",
-            "PROJECTS",
-        ]
-
-        for proj in projects:
-            head = proj.get("title", "")
-
-            if proj.get("tech"):
-                head += f" ({proj['tech']})"
-
-            lines.append(head)
-
-            for bullet in proj.get("bullets", []):
-                if bullet.strip():
-                    lines.append(
-                        f"- {bullet.strip()}"
-                    )
-
-    # Education
-    education = [
-        e
-        for e in data.get("education", [])
-        if e.get("degree") or e.get("institution")
-    ]
-
-    if education:
-        lines += [
-            "",
-            "EDUCATION",
-        ]
-
-        for edu in education:
-            head = " - ".join(
-                b
-                for b in [
-                    edu.get("degree", ""),
-                    edu.get("institution", ""),
-                ]
-                if b
-            )
-
-            if edu.get("dates"):
-                head += f" ({edu['dates']})"
-
-            lines.append(head)
-
-            if edu.get("details"):
-                lines.append(
-                    edu["details"]
-                )
-
-    # Skills
-    skills = [
-        s
-        for s in data.get("skills", [])
-        if s.strip()
-    ]
-
-    if skills:
-        lines += [
-            "",
-            "SKILLS",
-            ", ".join(skills),
-        ]
-
-    # Certifications
-    certs = [
-        c
-        for c in data.get("certifications", [])
-        if c.strip()
-    ]
-
-    if certs:
-        lines += [
-            "",
-            "CERTIFICATIONS",
-        ]
-
-        for c in certs:
-            lines.append(
-                f"- {c}"
-            )
-
-    return "\n".join(lines).strip()
-
-
-def render_resume_docx(data: dict) -> bytes:
-    from docx import Document
-    from docx.shared import Pt
-
-    doc = Document()
-
-    style = doc.styles["Normal"]
-    style.font.name = "Calibri"
-    style.font.size = Pt(10.5)
-
-    # Name
-    name_p = doc.add_paragraph()
-
-    name_run = name_p.add_run(
-        data.get("full_name", "").strip()
-    )
-
-    name_run.bold = True
-    name_run.font.size = Pt(18)
-
-    # Contact
-    contact = _contact_line(data)
-
-    if contact:
-        doc.add_paragraph(contact)
-
-    # Summary
-    if data.get("summary"):
-        doc.add_heading(
-            "Summary",
-            level=2
-        )
-
-        doc.add_paragraph(
-            data["summary"].strip()
-        )
-
-    # Experience
-    experience = [
-        e
-        for e in data.get("experience", [])
-        if e.get("role") or e.get("company")
-    ]
-
-    if experience:
-        doc.add_heading(
-            "Experience",
-            level=2
-        )
-
-        for exp in experience:
-            p = doc.add_paragraph()
-
-            head = " — ".join(
-                b
-                for b in [
-                    exp.get("role", ""),
-                    exp.get("company", ""),
-                ]
-                if b
-            )
-
-            run = p.add_run(head)
-            run.bold = True
-
-            if exp.get("dates"):
-                p.add_run(
-                    f"  ({exp['dates']})"
-                )
-
-            for bullet in exp.get("bullets", []):
-                if bullet.strip():
-                    doc.add_paragraph(
-                        bullet.strip(),
-                        style="List Bullet"
-                    )
-
-    # Projects
-    projects = [
-        pr
-        for pr in data.get("projects", [])
-        if pr.get("title")
-    ]
-
-    if projects:
-        doc.add_heading(
-            "Projects",
-            level=2
-        )
-
-        for proj in projects:
-            p = doc.add_paragraph()
-
-            run = p.add_run(
-                proj.get("title", "")
-            )
-
-            run.bold = True
-
-            if proj.get("tech"):
-                p.add_run(
-                    f"  ({proj['tech']})"
-                )
-
-            for bullet in proj.get("bullets", []):
-                if bullet.strip():
-                    doc.add_paragraph(
-                        bullet.strip(),
-                        style="List Bullet"
-                    )
-
-    # Education
-    education = [
-        e
-        for e in data.get("education", [])
-        if e.get("degree") or e.get("institution")
-    ]
-
-    if education:
-        doc.add_heading(
-            "Education",
-            level=2
-        )
-
-        for edu in education:
-            p = doc.add_paragraph()
-
-            head = " — ".join(
-                b
-                for b in [
-                    edu.get("degree", ""),
-                    edu.get("institution", ""),
-                ]
-                if b
-            )
-
-            run = p.add_run(head)
-            run.bold = True
-
-            if edu.get("dates"):
-                p.add_run(
-                    f"  ({edu['dates']})"
-                )
-
-            if edu.get("details"):
-                doc.add_paragraph(
-                    edu["details"]
-                )
-
-    # Skills
-    skills = [
-        s
-        for s in data.get("skills", [])
-        if s.strip()
-    ]
-
-    if skills:
-        doc.add_heading(
-            "Skills",
-            level=2
-        )
-
-        doc.add_paragraph(
-            ", ".join(skills)
-        )
-
-    # Certifications
-    certs = [
-        c
-        for c in data.get("certifications", [])
-        if c.strip()
-    ]
-
-    if certs:
-        doc.add_heading(
-            "Certifications",
-            level=2
-        )
-
-        for c in certs:
-            doc.add_paragraph(
-                c,
-                style="List Bullet"
-            )
-
-    buf = io.BytesIO()
-
-    doc.save(buf)
-
-    return buf.getvalue()
+# NOTE: render_resume_text / render_resume_docx / render_resume_html now live in
+# Backend/resume_render.py (imported above) so the preview, the download and the
+# text sent to the AI all come from the same code.
 
 
 def text_to_docx(text: str) -> bytes:
@@ -659,6 +317,7 @@ def build_resume(
 ):
 
     builder_data = data.model_dump()
+    builder_data["section_order"] = resolve_order(builder_data)
 
     text = render_resume_text(
         builder_data
@@ -721,6 +380,20 @@ def _safe_filename(title, suffix=""):
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_", stem).strip("_") or "resume"
     return f"{stem}{suffix}.docx"
 
+DOCX_MIME = (
+    "application/vnd.openxmlformats-officedocument."
+    "wordprocessingml.document"
+)
+
+
+def _docx_response(docx_bytes: bytes, filename: str) -> StreamingResponse:
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type=DOCX_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/build/download")
 def download_built_resume(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     resume = _get_resume(db, current_user.id)
@@ -732,8 +405,71 @@ def download_built_resume(current_user: User = Depends(get_current_user), db: Se
         docx_bytes = text_to_docx(resume.raw_text)
     else:
         raise HTTPException(404, "Build or upload a resume first")
-    filename = _safe_filename(resume.title)
-    ...
+    return _docx_response(docx_bytes, _safe_filename(resume.title))
+
+
+# ============================================================
+# Preview + section ordering
+# ============================================================
+
+@router.post("/build/preview")
+def preview_resume(
+    data: ResumeBuilderData,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Render the form as it currently stands, without saving. Call this on
+    every (debounced) edit to drive a live preview.
+    """
+    d = data.model_dump()
+    return {
+        "html": render_resume_html(d),
+        "section_order": resolve_order(d),
+    }
+
+
+@router.get("/build/preview")
+def preview_saved_resume(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    resume = _get_resume(db, current_user.id)
+    if not resume or not resume.builder_data:
+        raise HTTPException(404, "Build a resume first")
+    return {
+        "html": render_resume_html(resume.builder_data),
+        "section_order": resolve_order(resume.builder_data),
+    }
+
+
+@router.put("/build/order")
+def update_section_order(
+    payload: SectionOrderUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Move sections around (e.g. Projects above Experience) without resending
+    the whole form. Unlike /build this keeps the tailored text and ATS result,
+    since only the layout changed.
+    """
+    resume = _get_resume(db, current_user.id)
+    if not resume or not resume.builder_data:
+        raise HTTPException(404, "Build a resume first")
+
+    # assign a NEW dict - SQLAlchemy doesn't see in-place edits to JSON columns
+    new_data = dict(resume.builder_data)
+    new_data["section_order"] = resolve_order({"section_order": payload.section_order})
+    resume.builder_data = new_data
+    resume.raw_text = render_resume_text(new_data)
+    db.commit()
+    db.refresh(resume)
+    return {
+        "section_order": new_data["section_order"],
+        "html": render_resume_html(new_data),
+    }
+
+
 # ============================================================
 # Upload
 # ============================================================
@@ -930,26 +666,8 @@ def download_tailored_resume(
             ),
         )
 
-    docx_bytes = text_to_docx(
-        resume.tailored_text
-    )
-
-    filename = (
-        f"{(resume.title or 'resume').strip().replace(' ', '_')}"
-        "_tailored.docx"
-    )
-
-    return StreamingResponse(
-        io.BytesIO(docx_bytes),
-        media_type=(
-            "application/vnd.openxmlformats-officedocument."
-            "wordprocessingml.document"
-        ),
-        headers={
-            "Content-Disposition":
-                f'attachment; filename="{filename}"'
-        },
-    )
+    docx_bytes = text_to_docx(resume.tailored_text)
+    return _docx_response(docx_bytes, _safe_filename(resume.title, "_tailored"))
 
 
 # ============================================================

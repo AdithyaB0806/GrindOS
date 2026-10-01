@@ -10,6 +10,7 @@ from Backend.interview import router as interview_router
 from Backend.dashboard import router as dashboard_router
 from Backend.resume import router as resume_router
 from Backend.mock_interview import router as mock_interview_router
+from Backend.admin import router as admin_router
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -25,6 +26,7 @@ app.include_router(interview_router)
 app.include_router(dashboard_router)
 app.include_router(resume_router)
 app.include_router(mock_interview_router)
+app.include_router(admin_router)
 
 Base.metadata.create_all(bind=engine)
 

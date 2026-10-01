@@ -45,3 +45,11 @@ def get_current_user(
         raise credentials_exception
 
     return user
+
+
+def require_admin(current_user: User = Depends(get_current_user)):
+    # role is read from the DB on every request (not from the JWT), so
+    # demoting an admin takes effect immediately.
+    if (current_user.role or "user") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user

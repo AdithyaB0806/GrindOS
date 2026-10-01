@@ -267,6 +267,33 @@ export const api = {
       token,
       body: { answer },
     }),
+
+  // ---- Admin (requires an admin account) ----
+
+  adminStats: (token) => request("/admin/stats", { token }),
+
+  adminListUsers: (token) => request("/admin/users", { token }),
+
+  adminSetRole: ({ token, userId, role }) =>
+    request(`/admin/users/${userId}/role`, {
+      method: "PATCH",
+      token,
+      body: { role },
+    }),
+
+  adminListQuestions: (token) => request("/admin/questions", { token }),
+
+  adminCreateQuestion: ({ token, ...body }) =>
+    request("/admin/questions", { method: "POST", token, body }),
+
+  adminUpdateQuestion: ({ token, questionId, ...body }) =>
+    request(`/admin/questions/${questionId}`, { method: "PATCH", token, body }),
+
+  adminDeleteQuestion: ({ token, questionId }) =>
+    request(`/admin/questions/${questionId}`, { method: "DELETE", token }),
+
+  adminReorderQuestions: ({ token, ids }) =>
+    request("/admin/questions/reorder", { method: "PUT", token, body: { ids } }),
 };
 
 export { API_BASE_URL };
