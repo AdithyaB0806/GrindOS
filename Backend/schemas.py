@@ -1,16 +1,35 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Dict
 
 
 class Register(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=100)
     email: EmailStr
-    password: str
+    # bcrypt only uses the first 72 bytes, so longer passwords are rejected
+    password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name can't be empty")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def lower_email(cls, v: str) -> str:
+        return v.strip().lower()
 
 
 class Login(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=72)
+
+    @field_validator("email")
+    @classmethod
+    def lower_email(cls, v: str) -> str:
+        return v.strip().lower()
 
 
 class Token(BaseModel):

@@ -125,6 +125,14 @@ def update_skill_status(
         raise HTTPException(status_code=404, detail="Skill not found")
 
     skill.status = data.status
+
+    # roadmap-linked skills share their status with the roadmap item,
+    # so progress shows up on both pages
+    if skill.roadmap_item_id:
+        item = db.query(RoadmapItem).filter(RoadmapItem.id == skill.roadmap_item_id).first()
+        if item:
+            item.status = data.status
+
     db.commit()
     db.refresh(skill)
     return _serialize_all([skill], db)[0]

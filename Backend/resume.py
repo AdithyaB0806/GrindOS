@@ -3,10 +3,10 @@ import os
 import io
 import json
 
+import logging
 import re
 
 from dotenv import load_dotenv
-from openai import OpenAI
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -22,6 +22,7 @@ from Backend.schemas import (
     CoverLetterRequest,
 )
 from Backend.auth import get_current_user
+from Backend.ratelimit import spend_ai_budget
 from Backend.resumerender import (
     render_text as render_resume_text,
     render_docx as render_resume_docx,
@@ -36,15 +37,22 @@ from Backend.resumerender import (
 
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+log = logging.getLogger("grindos.resume")
 
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is not set in the environment.")
+_client = None
 
-client = OpenAI(
-    api_key=GROQ_API_KEY,
-    base_url="https://api.groq.com/openai/v1",
-)
+
+def _get_client():
+    """Created on first use, so the rest of the API still starts without a Groq key."""
+    global _client
+    if _client is None:
+        from openai import OpenAI
+
+        key = os.getenv("GROQ_API_KEY")
+        if not key:
+            raise RuntimeError("GROQ_API_KEY is not set in the environment.")
+        _client = OpenAI(api_key=key, base_url="https://api.groq.com/openai/v1")
+    return _client
 
 
 router = APIRouter(prefix="/resume", tags=["Resume"])
@@ -55,8 +63,10 @@ router = APIRouter(prefix="/resume", tags=["Resume"])
 # ============================================================
 
 ALLOWED_UPLOAD_TYPES = {"pdf", "docx"}
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_RESUME_CHARS = 30000
 
-GROQ_MODEL = "openai/gpt-oss-20b"
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 
 # ============================================================
@@ -173,9 +183,22 @@ def extract_text_from_docx(file_bytes: bytes) -> str:
 
     document = docx.Document(io.BytesIO(file_bytes))
 
-    return "\n".join(
-        p.text for p in document.paragraphs if p.text.strip()
-    )
+    lines = [p.text for p in document.paragraphs if p.text.strip()]
+
+    # Many resume templates keep their content inside tables, which
+    # document.paragraphs does not include.
+    for table in document.tables:
+        for row in table.rows:
+            seen = set()
+            for cell in row.cells:
+                if id(cell._tc) in seen:  # merged cells repeat
+                    continue
+                seen.add(id(cell._tc))
+                text = " ".join(p.text.strip() for p in cell.paragraphs if p.text.strip())
+                if text:
+                    lines.append(text)
+
+    return "\n".join(lines)
 
 
 # ============================================================
@@ -272,7 +295,7 @@ def _serialize(r: Resume) -> dict:
 
 def _call_groq_text(prompt: str) -> str:
 
-    response = client.responses.create(
+    response = _get_client().responses.create(
         model=GROQ_MODEL,
         input=prompt,
     )
@@ -282,7 +305,7 @@ def _call_groq_text(prompt: str) -> str:
 
 def _call_groq_json(prompt: str) -> dict:
 
-    response = client.chat.completions.create(
+    response = _get_client().chat.completions.create(
         model=GROQ_MODEL,
         messages=[
             {
@@ -493,7 +516,21 @@ async def upload_resume(
             detail="Only PDF and DOCX files are supported"
         )
 
-    content = await file.read()
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"That file is over {MAX_UPLOAD_BYTES // (1024 * 1024)} MB. Upload a smaller PDF or DOCX.",
+        )
+
+    # a renamed .doc or .png would otherwise fail later with a confusing parser error
+    signature = b"%PDF" if ext == "pdf" else b"PK"
+    if not content.lstrip()[:4].startswith(signature):
+        raise HTTPException(
+            status_code=400,
+            detail=f"That doesn't look like a real .{ext} file. Export it again as {ext.upper()} and retry.",
+        )
 
     try:
 
@@ -507,12 +544,16 @@ async def upload_resume(
                 content
             )
 
-    except Exception as e:
-
+    except Exception:
+        log.exception("Resume text extraction failed")
         raise HTTPException(
             status_code=400,
-            detail=f"Couldn't read that file: {str(e)}"
+            detail="Couldn't read that file. Check that it isn't password-protected or damaged.",
         )
+
+    # Postgres refuses NUL characters in text columns and PDF extraction can
+    # produce them, which turned a valid upload into a 500.
+    text = text.replace("\x00", "")[:MAX_RESUME_CHARS]
 
     if not text.strip():
 
@@ -616,17 +657,14 @@ def tailor_resume(
         jd_text=payload.jd_text.strip(),
     )
 
+    spend_ai_budget(current_user)
     try:
-
-        tailored = _call_groq_text(
-            prompt
-        )
-
-    except Exception as e:
-
+        tailored = _call_groq_text(prompt)
+    except Exception:
+        log.exception("Resume tailoring failed")
         raise HTTPException(
-            status_code=500,
-            detail=f"AI tailoring failed: {str(e)}"
+            status_code=502,
+            detail="Tailoring didn't work this time. Try again in a moment.",
         )
 
     resume.tailored_text = tailored
@@ -707,17 +745,14 @@ def ats_check(
         jd_text=jd_text,
     )
 
+    spend_ai_budget(current_user)
     try:
-
-        result = _call_groq_json(
-            prompt
-        )
-
-    except Exception as e:
-
+        result = _call_groq_json(prompt)
+    except Exception:
+        log.exception("ATS check failed")
         raise HTTPException(
-            status_code=500,
-            detail=f"ATS check failed: {str(e)}"
+            status_code=502,
+            detail="The ATS check didn't work this time. Try again in a moment.",
         )
 
     resume.ats = result
@@ -764,20 +799,14 @@ def generate_cover_letter(
         ),
     )
 
+    spend_ai_budget(current_user)
     try:
-
-        content = _call_groq_text(
-            prompt
-        )
-
-    except Exception as e:
-
+        content = _call_groq_text(prompt)
+    except Exception:
+        log.exception("Cover letter generation failed")
         raise HTTPException(
-            status_code=500,
-            detail=(
-                "Cover letter generation failed: "
-                f"{str(e)}"
-            ),
+            status_code=502,
+            detail="The cover letter didn't work this time. Try again in a moment.",
         )
 
     existing = (

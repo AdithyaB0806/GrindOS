@@ -1,30 +1,33 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from dotenv import load_dotenv
-from pathlib import Path
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent
-print("BASE_DIR:", BASE_DIR)
-
-env_path = BASE_DIR / ".env"
-print(".env exists:", env_path.exists())
-print("ENV PATH:", env_path)
-
-load_dotenv(env_path)
+load_dotenv(BASE_DIR / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-print("DATABASE_URL:", DATABASE_URL)
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not set. Copy .env.example to Backend/.env and fill it in."
+    )
 
-engine = create_engine(DATABASE_URL)
+# Some hosts (Heroku, older Render setups) hand out "postgres://", which
+# SQLAlchemy 1.4+ no longer accepts.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-SessionLocal = sessionmaker(
-    autoflush=False,
-    autocommit=False,
-    bind=engine
-)
+# pool_pre_ping drops dead connections instead of failing the first request
+# after the DB has been idle.
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+SessionLocal = sessionmaker(autoflush=False, autocommit=False, bind=engine)
 
 Base = declarative_base()
+
+
 def get_db():
     db = SessionLocal()
     try:

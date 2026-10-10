@@ -1,19 +1,17 @@
-import os
 import json
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from Backend.ai import AIError, ai_unavailable, generate_json
+from Backend.auth import get_current_user
 from Backend.database import get_db
 from Backend.models import InterviewQuestion, Recommendation, Roadmap, User
+from Backend.ratelimit import spend_ai_budget
 from Backend.schemas import InterviewQuestionStatusUpdate
-from Backend.auth import get_current_user
 
-load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+log = logging.getLogger("grindos.interview")
 
 router = APIRouter(prefix="/interview", tags=["Interview"])
 
@@ -50,6 +48,45 @@ Rules:
 - Domain questions must actually match {career_title}.
 - Keep prompts concise. talking_points: 3-5 short bullets.
 """
+
+
+def _text(value, limit: int) -> str:
+    return " ".join(str(value or "").split())[:limit]
+
+
+def _clean_questions(data) -> dict:
+    """Keep usable questions only, with safe categories and lengths."""
+    raw = data.get("questions") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        raise ValueError("no questions in AI reply")
+
+    questions = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        prompt = _text(item.get("prompt"), 600)
+        if not prompt:
+            continue
+        category = item.get("category")
+        if category not in ALLOWED_CATEGORIES:
+            category = "domain"
+        points = item.get("talking_points")
+        points = (
+            [_text(p, 200) for p in points if isinstance(p, (str, int, float)) and str(p).strip()][:6]
+            if isinstance(points, list)
+            else []
+        )
+        questions.append(
+            {
+                "category": category,
+                "prompt": prompt,
+                "hint": _text(item.get("hint"), 300) or None,
+                "talking_points": points,
+            }
+        )
+    if not questions:
+        raise ValueError("AI reply had no usable questions")
+    return {"questions": questions[:20]}
 
 
 def _serialize(q: InterviewQuestion) -> dict:
@@ -129,6 +166,7 @@ def generate_interview_prep(
     existing = (
         db.query(InterviewQuestion)
         .filter(InterviewQuestion.user_id == current_user.id)
+        .order_by(InterviewQuestion.id)
         .all()
     )
     if existing and not regenerate:
@@ -159,38 +197,25 @@ def generate_interview_prep(
         skill_gaps=json.dumps(chosen.get("skill_gaps", [])),
     )
 
+    spend_ai_budget(current_user)
     try:
-        response = client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
-        )
-        data = json.loads(response.text)
-        items = data.get("questions", [])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI interview generation failed: {str(e)}")
-
-    if not items:
-        raise HTTPException(status_code=500, detail="AI returned no interview questions")
+        items = generate_json(prompt, validate=_clean_questions, provider="openai")["questions"]
+    except AIError:
+        raise ai_unavailable("Building your interview prep")
 
     db.query(InterviewQuestion).filter(InterviewQuestion.user_id == current_user.id).delete()
 
     saved = []
     for item in items:
-        category = item.get("category", "domain")
-        if category not in ALLOWED_CATEGORIES:
-            category = "domain"
         q = InterviewQuestion(
             user_id=current_user.id,
             career_title=career_title,
-            category=category,
-            prompt=item.get("prompt", "").strip(),
-            hint=(item.get("hint") or "").strip() or None,
-            talking_points=item.get("talking_points") or [],
+            category=item["category"],
+            prompt=item["prompt"],
+            hint=item["hint"],
+            talking_points=item["talking_points"],
             status="not_started",
         )
-        if not q.prompt:
-            continue
         db.add(q)
         saved.append(q)
 
