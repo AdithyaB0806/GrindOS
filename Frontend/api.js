@@ -4,6 +4,30 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// App.jsx registers a function here that signs the user out. It runs when the
+// server says the saved token is no longer valid (expired or revoked).
+let unauthorizedHandler = null;
+export function setUnauthorizedHandler(fn) {
+  unauthorizedHandler = fn;
+}
+
+// FastAPI sends `detail` as a string for our own errors but as a list of
+// objects for validation errors; turn both into a sentence a person can read.
+function formatDetail(detail, fallback) {
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((d) => {
+        const field = Array.isArray(d.loc) ? d.loc.filter((p) => p !== "body").join(" ") : "";
+        const msg = String(d.msg || "").replace(/^Value error, /, "");
+        return field && msg ? `${field}: ${msg}` : msg;
+      })
+      .filter(Boolean);
+    if (messages.length) return messages.join(". ");
+  }
+  return fallback;
+}
+
 export class ApiError extends Error {
   constructor(message, status, detail) {
     super(message);
@@ -41,8 +65,11 @@ async function request(path, { method = "GET", body, token, query } = {}) {
   const payload = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
-    const detail =
-      (payload && (payload.detail || payload.message)) || res.statusText;
+    if (res.status === 401 && token && unauthorizedHandler) unauthorizedHandler();
+    const detail = formatDetail(
+      payload && (payload.detail ?? payload.message),
+      res.statusText || "Something went wrong"
+    );
     throw new ApiError(detail, res.status, payload);
   }
 
@@ -224,7 +251,11 @@ export const api = {
     const isJson = res.headers.get("content-type")?.includes("application/json");
     const payload = isJson ? await res.json().catch(() => null) : null;
     if (!res.ok) {
-      const detail = (payload && (payload.detail || payload.message)) || res.statusText;
+      if (res.status === 401 && token && unauthorizedHandler) unauthorizedHandler();
+      const detail = formatDetail(
+        payload && (payload.detail ?? payload.message),
+        res.statusText || "Something went wrong"
+      );
       throw new ApiError(detail, res.status, payload);
     }
     return payload;

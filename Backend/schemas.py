@@ -130,7 +130,12 @@ class ChatMessageOut(BaseModel):
     role: str
     content: str
 
+# In Backend/schemas.py
 
+class InterviewGenerateRequest(BaseModel):
+    regenerate: bool = False
+    career_title: str | None = None
+    jd_text: str | None = None
 # ---------- Resume / cover letter ----------
 
 class EducationEntry(BaseModel):

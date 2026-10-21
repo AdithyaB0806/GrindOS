@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useRef } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, setUnauthorizedHandler } from "./api";
 import "./theme.css";
 
 /* ============================================================
@@ -14,6 +14,19 @@ function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem("gos_token"));
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(!!token);
+  const [notice, setNotice] = useState("");
+
+  // If any request comes back 401 the token has expired: sign out and say why,
+  // instead of leaving every screen showing the same error.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      localStorage.removeItem("gos_token");
+      setToken(null);
+      setUser(null);
+      setNotice("Your session expired. Sign in again to continue.");
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   useEffect(() => {
     if (!token) {
@@ -33,6 +46,7 @@ function AuthProvider({ children }) {
   const login = async (email, password) => {
     const res = await api.login({ email, password });
     localStorage.setItem("gos_token", res.access_token);
+    setNotice("");
     setToken(res.access_token);
   };
 
@@ -48,7 +62,7 @@ function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ token, user, loading, notice, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -60,7 +74,11 @@ function AuthProvider({ children }) {
 
 function Alert({ kind = "error", children }) {
   if (!children) return null;
-  return <div className={`gos-alert gos-alert-${kind}`}>{children}</div>;
+  return (
+    <div className={`gos-alert gos-alert-${kind}`} role={kind === "error" ? "alert" : "status"}>
+      {children}
+    </div>
+  );
 }
 
 function errorMessage(err) {
@@ -71,10 +89,20 @@ function errorMessage(err) {
 function BrandMark() {
   return (
     <div className="gos-brand">
-      <span className="gos-brand-mark" />
-       GRINDOS <small>career OS</small>
+      <span className="gos-brand-mark" aria-hidden="true" />
+      GrindOS
     </div>
   );
+}
+
+// Only ever link to web addresses. Saved URLs and AI-suggested resources are
+// untrusted, and a javascript: link would run code when clicked.
+function safeUrl(raw) {
+  const url = (raw || "").trim();
+  if (!url) return undefined;
+  if (/^https?:\/\//i.test(url)) return url;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return undefined;
+  return `https://${url}`;
 }
 
 function youtubeSearch(query) {
@@ -95,7 +123,7 @@ function CircuitTrack({ percent = 0, label }) {
         </div>
       </div>
       <div className="circuit-track-readout">
-        <strong>{clamped}%</strong> grind complete
+        <strong>{clamped}%</strong> complete
       </div>
     </div>
   );
@@ -105,36 +133,36 @@ function CircuitTrack({ percent = 0, label }) {
 
 const TRACKED_STAGES = ["learning", "practicing", "completed"];
 const STAGE_LABEL = {
-  not_started: "NOT STARTED",
-  learning: "LEARNING",
-  practicing: "PRACTICING",
-  completed: "COMPLETED",
+  not_started: "Not started",
+  learning: "Learning",
+  practicing: "Practicing",
+  completed: "Completed",
 };
 const STAGE_ORDER = ["not_started", ...TRACKED_STAGES];
 
 const JOB_STATUSES = ["wishlist", "applied", "oa", "interview", "offer", "rejected"];
 const JOB_STATUS_LABEL = {
-  wishlist: "WISHLIST",
-  applied: "APPLIED",
-  oa: "OA / TEST",
-  interview: "INTERVIEW",
-  offer: "OFFER",
-  rejected: "REJECTED",
+  wishlist: "Wishlist",
+  applied: "Applied",
+  oa: "OA / test",
+  interview: "Interview",
+  offer: "Offer",
+  rejected: "Rejected",
 };
 const JOB_SOURCES = ["LinkedIn", "Naukri", "Internshala", "Referral", "Career page", "Twitter / X", "Other"];
 
 const INTERVIEW_STAGES = ["practicing", "nailed"];
 const INTERVIEW_STAGE_ORDER = ["not_started", ...INTERVIEW_STAGES];
 const INTERVIEW_STAGE_LABEL = {
-  not_started: "NOT STARTED",
-  practicing: "PRACTICING",
-  nailed: "NAILED",
+  not_started: "Not started",
+  practicing: "Practicing",
+  nailed: "Nailed it",
 };
 const INTERVIEW_CATEGORY_LABEL = {
   dsa: "DSA",
-  system_design: "SYSTEM DESIGN",
-  domain: "ROLE / DOMAIN",
-  behavioral: "BEHAVIORAL",
+  system_design: "System design",
+  domain: "Role / domain",
+  behavioral: "Behavioral",
   hr: "HR",
 };
 
@@ -173,85 +201,68 @@ function StageRail({ status, onChange, disabled }) {
 function Navbar({ view, setView, hasRecommendation }) {
   const { user, logout } = useAuth();
 
+  const groups = [
+    [
+      { id: "dashboard", label: "Home" },
+      {
+        id: hasRecommendation ? "results" : "assessment",
+        label: "Career fit",
+        match: ["assessment", "results"],
+      },
+    ],
+    [
+      { id: "roadmap", label: "Roadmap" },
+      { id: "skills", label: "Skills" },
+    ],
+    [
+      { id: "jobs", label: "Applications" },
+      { id: "resume", label: "Resume" },
+      { id: "interview", label: "Interview questions" },
+      { id: "mock", label: "Mock interviews" },
+    ],
+  ];
+
+  const navButton = (item, extraClass = "") => {
+    const active = (item.match || [item.id]).includes(view);
+    return (
+      <button
+        key={item.id}
+        type="button"
+        className={`gos-nav-btn ${extraClass} ${active ? "active" : ""}`}
+        aria-current={active ? "page" : undefined}
+        onClick={() => setView(item.id)}
+      >
+        {item.label}
+      </button>
+    );
+  };
+
   return (
-    <div className="gos-navbar">
+    <nav className="gos-navbar" aria-label="Main">
       <BrandMark />
       {user && (
         <div className="gos-nav-links">
-          <button
-            className={`gos-nav-btn ${view === "dashboard" ? "active" : ""}`}
-            onClick={() => setView("dashboard")}
-          >
-            DASHBOARD
-          </button>
-          <button
-            className={`gos-nav-btn ${
-              view === "assessment" || view === "results" ? "active" : ""
-            }`}
-            onClick={() => setView(hasRecommendation ? "results" : "assessment")}
-          >
-            ASSESSMENT
-          </button>
-          <button
-            className={`gos-nav-btn ${view === "roadmap" ? "active" : ""}`}
-            onClick={() => setView("roadmap")}
-          >
-            ROADMAP
-          </button>
-          <button
-            className={`gos-nav-btn ${view === "skills" ? "active" : ""}`}
-            onClick={() => setView("skills")}
-          >
-            SKILLS
-          </button>
-           <button
-            className={`gos-nav-btn ${view === "jobs" ? "active" : ""}`}
-            onClick={() => setView("jobs")}
-          >
-            JOBS
-          </button>
-          <button
-            className={`gos-nav-btn ${view === "interview" ? "active" : ""}`}
-            onClick={() => setView("interview")}
-          >
-            INTERVIEW
-          </button>
-          <button
-            className={`gos-nav-btn ${view === "resume" ? "active" : ""}`}
-            onClick={() => setView("resume")}
-          >
-            RESUME
-          </button>
-          <button
-            className={`gos-nav-btn ${view === "mock" ? "active" : ""}`}
-            onClick={() => setView("mock")}
-          >
-            MOCK PREP
-          </button>
+          {groups.map((group, i) => (
+            <div className="gos-nav-group" key={i}>
+              {group.map((item) => navButton(item))}
+            </div>
+          ))}
           {user.role === "admin" && (
-            <button
-              className={`gos-nav-btn admin-nav ${view === "admin" ? "active" : ""}`}
-              onClick={() => setView("admin")}
-            >
-              ADMIN
-            </button>
+            <div className="gos-nav-group">
+              {navButton({ id: "admin", label: "Admin" }, "admin-nav")}
+            </div>
           )}
         </div>
       )}
-      <div className="gos-nav-user">
-        {user && (
-          <>
-            <span className="gos-user-chip">
-              <strong>{user.name}</strong>
-              {user.role === "admin" && <span className="admin-badge">ADMIN</span>}
-            </span>
-            <button className="gos-btn" onClick={logout}>
-              LOG OUT
-            </button>
-          </>
-        )}
-      </div>
-    </div>
+      {user && (
+        <div className="gos-nav-user">
+          <span className="gos-user-chip">{user.name}</span>
+          <button type="button" className="gos-btn gos-btn-quiet" onClick={logout}>
+            Log out
+          </button>
+        </div>
+      )}
+    </nav>
   );
 }
 
@@ -261,7 +272,7 @@ function Navbar({ view, setView, hasRecommendation }) {
 
 function AuthScreen() {
   const [mode, setMode] = useState("login"); // "login" | "register"
-  const { login, register } = useAuth();
+  const { login, register, notice } = useAuth();
 
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
@@ -287,55 +298,71 @@ function AuthScreen() {
   };
 
   return (
-    <div className="gos-panel gos-card">
-      <div className="gos-eyebrow">{mode === "login" ? "Sign in" : "Create account"}</div>
-      <h1 className="gos-title">{mode === "login" ? "Welcome back" : "Start the grind"}</h1>
+    <div className="auth-layout">
+      <div className="auth-intro">
+        <h2 className="auth-intro-title">Work out what to aim for, then plan how to get there.</h2>
+        <p>
+          A short assessment of your skills and interests leads to career paths you can compare. Pick
+          one and GrindOS turns it into a roadmap. Your skills, applications, resume and interview
+          practice live in the same place.
+        </p>
+      </div>
+      <div className="gos-panel gos-card">
+      <h1 className="gos-title">{mode === "login" ? "Welcome back" : "Create your account"}</h1>
       <p className="gos-subtitle">
         {mode === "login"
           ? "Sign in to pick up your roadmap, assessment, and progress."
           : "One account tracks your assessment, roadmap, and interview prep."}
       </p>
 
+      <Alert kind="info">{notice}</Alert>
       <Alert>{error}</Alert>
 
       <form onSubmit={submit}>
         {mode === "register" && (
           <div className="gos-field">
-            <label className="gos-label">Name</label>
+            <label className="gos-label" htmlFor="auth-name">Name</label>
             <input
+              id="auth-name"
+              autoComplete="name"
               className="gos-input"
               value={form.name}
               onChange={update("name")}
-              placeholder="Adhi Kumar"
+              placeholder="Your full name"
               required
             />
           </div>
         )}
         <div className="gos-field">
-          <label className="gos-label">Email</label>
+          <label className="gos-label" htmlFor="auth-email">Email</label>
           <input
+            id="auth-email"
+            autoComplete="email"
             className="gos-input"
             type="email"
             value={form.email}
             onChange={update("email")}
-            placeholder="you@domain.com"
+            placeholder="you@example.com"
             required
           />
         </div>
         <div className="gos-field">
-          <label className="gos-label">Password</label>
+          <label className="gos-label" htmlFor="auth-password">Password</label>
           <input
+            id="auth-password"
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
             className="gos-input"
             type="password"
             value={form.password}
             onChange={update("password")}
-            placeholder="••••••••"
+            placeholder={mode === "login" ? "Your password" : "At least 8 characters"}
+            minLength={mode === "register" ? 8 : undefined}
             required
           />
         </div>
 
         <button className="gos-btn gos-btn-primary" disabled={busy}>
-          {busy ? "WORKING…" : mode === "login" ? "SIGN IN" : "CREATE ACCOUNT"}
+          {busy ? "Working…" : mode === "login" ? "Sign in" : "Create account"}
         </button>
       </form>
 
@@ -349,13 +376,14 @@ function AuthScreen() {
           </>
         ) : (
           <>
-            Already grinding?{" "}
+            Already have an account?{" "}
             <button className="gos-btn gos-btn-ghost" onClick={() => setMode("login")}>
               Sign in
             </button>
           </>
         )}
       </div>
+    </div>
     </div>
   );
 }
@@ -446,9 +474,9 @@ function Assessment({ onDone }) {
     <div className="gos-panel assess-card">
       <div className="grind-meter-label">
         <span>
-          QUESTION <strong>{step + 1}</strong> / {questions.length}
+          Question <strong>{step + 1}</strong> of {questions.length}
         </span>
-        <span>{Math.round(((step + (selected ? 1 : 0)) / questions.length) * 100)}% GRIND</span>
+        <span>{Math.round(((step + (selected ? 1 : 0)) / questions.length) * 100)}% done</span>
       </div>
       <div className="grind-meter">
         {questions.map((_, i) => (
@@ -482,7 +510,7 @@ function Assessment({ onDone }) {
               <input
                 className="gos-input"
                 type="text"
-                placeholder="Tell us more..."
+                placeholder="Tell us more..." aria-label="Tell us more..."
                 value={otherAnswers[q.key] || ""}
                 onChange={(e) =>
                   setOtherAnswers((prev) => ({
@@ -499,7 +527,7 @@ function Assessment({ onDone }) {
 
       <div className="assess-nav">
         <button className="gos-btn" onClick={back} disabled={step === 0}>
-          BACK
+          Back
         </button>
         <button
           className="gos-btn gos-btn-primary"
@@ -511,7 +539,7 @@ function Assessment({ onDone }) {
             (selected === "Other" && !otherAnswers[q.key]?.trim())
           }
         >
-          {submitting ? "SAVING…" : isLast ? "SUBMIT ASSESSMENT" : "NEXT"}
+          {submitting ? "Saving…" : isLast ? "See my results" : "Next"}
         </button>
       </div>
     </div>
@@ -549,7 +577,6 @@ function RecommendationResult({ result, onRetake, onChoosePath, onResultUpdated 
 
   return (
     <div className="gos-shell gos-shell-wide">
-      <div className="gos-eyebrow">AI analysis complete</div>
       <h1 className="gos-title">Your career profile</h1>
       <p className="gos-subtitle">
         GrindOS analyzed your assessment answers. Pick a path to build a roadmap for it, or tell
@@ -562,11 +589,12 @@ function RecommendationResult({ result, onRetake, onChoosePath, onResultUpdated 
         {result.career_paths?.map((career, index) => (
           <div className="gos-panel terminal-panel rec-card" key={career.title}>
             <div className="terminal-head">
-              <span className="terminal-dot" /> path_{String(index + 1).padStart(2, "0")}
+              <span className="section-title">Path {index + 1}</span>
             </div>
             <h2 className="guide-title">{career.title}</h2>
             <p className="guide-summary">{career.fit_reason}</p>
 
+            <div className="rec-detail">
             {career.matching_skills?.length > 0 && (
               <>
                 <h3 className="guide-h">Matching skills</h3>
@@ -599,13 +627,14 @@ function RecommendationResult({ result, onRetake, onChoosePath, onResultUpdated 
                 </ul>
               </>
             )}
+            </div>
 
             <button
               type="button"
               className="gos-btn gos-btn-primary rec-choose-btn"
               onClick={() => onChoosePath?.(career.title)}
             >
-              BUILD ROADMAP FOR THIS PATH →
+              Build a roadmap for this path
             </button>
           </div>
         ))}
@@ -613,14 +642,14 @@ function RecommendationResult({ result, onRetake, onChoosePath, onResultUpdated 
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> next_skill
+          <span className="section-title">Skill to pick up next</span>
         </div>
         <h2 className="guide-title">{result.next_skill_to_learn}</h2>
       </div>
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> refine.suggestions
+          <span className="section-title">Want different suggestions?</span>
         </div>
         <p className="gos-empty-note" style={{ marginBottom: 12 }}>
           Not quite it? Tell it what to change — more remote-friendly roles, less data-heavy,
@@ -643,10 +672,10 @@ function RecommendationResult({ result, onRetake, onChoosePath, onResultUpdated 
               style={{ width: "auto" }}
               disabled={regenerating || !feedback.trim()}
             >
-              {regenerating ? "UPDATING…" : "GET UPDATED SUGGESTIONS"}
+              {regenerating ? "Updating…" : "Update my suggestions"}
             </button>
             <button type="button" className="gos-btn gos-btn-ghost" onClick={onRetake}>
-              RETAKE ASSESSMENT
+              Retake the assessment
             </button>
           </div>
         </form>
@@ -670,7 +699,7 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
   if (!summary && !error) {
     return (
       <div className="gos-loading">
-        <span className="gos-spinner" /> Loading command center…
+        <span className="gos-spinner" /> Loading your dashboard…
       </div>
     );
   }
@@ -685,14 +714,13 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
   return (
     <div className="gos-shell gos-shell-wide">
       <div>
-        <div className="gos-eyebrow">Command center</div>
         <h1 className="gos-title">Welcome back, {firstName}</h1>
         <p className="gos-subtitle">
           {justSubmitted
-            ? "Assessment logged. Your career path, roadmap, and prep modules are ready to run."
+            ? "Your assessment is saved. Your career paths, roadmap and interview prep are ready when you are."
             : roadmap
-              ? `Tracking ${roadmap.career_title}. Keep the circuit moving.`
-              : "Live readout of your grind — assessment, roadmap, jobs, and interviews."}
+              ? `You're working toward ${roadmap.career_title}. Pick up where you left off.`
+              : "Start with the assessment, then build a roadmap, track applications and practise interviews."}
         </p>
       </div>
 
@@ -700,26 +728,26 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
 
       <div className="dash-stats">
         <button className="dash-stat gos-panel" type="button" onClick={onGoRoadmap}>
-          <span className="dash-stat-key">ROADMAP</span>
+          <span className="dash-stat-key">Roadmap</span>
           <span className="dash-stat-val">{roadmap ? `${roadmap.progress_percent}%` : "—"}</span>
           <span className="dash-stat-sub">
             {roadmap ? `${roadmap.completed_items}/${roadmap.total_items} items` : "Not generated"}
           </span>
         </button>
         <button className="dash-stat gos-panel" type="button" onClick={onGoSkills}>
-          <span className="dash-stat-key">SKILLS</span>
+          <span className="dash-stat-key">Skills</span>
           <span className="dash-stat-val">{skills ? `${skills.average_percent}%` : "0%"}</span>
           <span className="dash-stat-sub">
             {skills ? `${skills.completed_skills}/${skills.total_skills} completed` : "None tracked"}
           </span>
         </button>
         <button className="dash-stat gos-panel" type="button" onClick={onGoJobs}>
-          <span className="dash-stat-key">JOB PIPELINE</span>
+          <span className="dash-stat-key">Applications</span>
           <span className="dash-stat-val">{jobs?.pipeline ?? 0}</span>
           <span className="dash-stat-sub">{jobs?.total ?? 0} tracked applications</span>
         </button>
         <button className="dash-stat gos-panel" type="button" onClick={onGoInterview}>
-          <span className="dash-stat-key">INTERVIEW</span>
+          <span className="dash-stat-key">Interview prep</span>
           <span className="dash-stat-val">{interview?.total ? `${interview.progress_percent}%` : "—"}</span>
           <span className="dash-stat-sub">
             {interview?.total ? `${interview.nailed}/${interview.total} nailed` : "Prep not generated"}
@@ -730,7 +758,7 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
       <div className="gos-grid-2">
         <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> next.grind
+            <span className="section-title">Your next step</span>
           </div>
           {roadmap?.next_item ? (
             <>
@@ -740,7 +768,7 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
                 Open the roadmap and click this item for how to learn it — channels, docs, and a practice project.
               </p>
               <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={onGoRoadmap}>
-                OPEN ROADMAP
+                Open roadmap
               </button>
             </>
           ) : rec ? (
@@ -748,14 +776,14 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
               <h2 className="dash-next-title">{summary.next_skill_to_learn || rec.next_skill_to_learn}</h2>
               <p className="gos-empty-note">Generate a roadmap to break this into a week-by-week path.</p>
               <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={onGoRoadmap}>
-                GENERATE ROADMAP
+                Build my roadmap
               </button>
             </>
           ) : (
             <>
               <p className="gos-empty-note">Take the assessment so GrindOS can pick your first move.</p>
               <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={onGoAssessment}>
-                START ASSESSMENT
+                Start the assessment
               </button>
             </>
           )}
@@ -763,7 +791,7 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
 
         <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> career.paths
+            <span className="section-title">Career paths for you</span>
           </div>
           {rec?.career_paths?.length ? (
             <>
@@ -777,7 +805,7 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
                 </div>
               ))}
               <button className="gos-btn gos-btn-ghost" onClick={onViewAnalysis}>
-                View full analysis →
+                View full analysis
               </button>
             </>
           ) : (
@@ -791,7 +819,7 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
       <div className="gos-grid-2">
         <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> jobs.recent
+            <span className="section-title">Recent applications</span>
           </div>
           {jobs?.recent?.length ? (
             <>
@@ -807,14 +835,14 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
                 </div>
               ))}
               <button className="gos-btn gos-btn-ghost" onClick={onGoJobs}>
-                Open job tracker →
+                Open applications
               </button>
             </>
           ) : (
             <>
               <p className="gos-empty-note">No applications yet. Track internships and roles as you apply.</p>
               <button className="gos-btn" onClick={onGoJobs}>
-                ADD A JOB
+                Add an application
               </button>
             </>
           )}
@@ -822,7 +850,7 @@ function Dashboard({ justSubmitted, refreshKey, onViewAnalysis, onGoRoadmap, onG
 
         <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> skills.circuit
+            <span className="section-title">Skills progress</span>
           </div>
           <CircuitTrack percent={skills?.average_percent ?? 0} label="Average skill progress" />
           {skills?.next_skill && (
@@ -884,7 +912,7 @@ function GuideBody({ payload, loading, error }) {
                   >
                     <div className="guide-card-name">{yt.channel}</div>
                     <div className="guide-card-why">{yt.focus}</div>
-                    <div className="guide-card-cta">Search on YouTube →</div>
+                    <div className="guide-card-cta">Search on YouTube</div>
                   </a>
                 ))}
               </div>
@@ -898,7 +926,7 @@ function GuideBody({ payload, loading, error }) {
                   <a
                     key={res.name}
                     className="guide-card"
-                    href={res.url || "#"}
+                    href={safeUrl(res.url) || "#"}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -986,13 +1014,13 @@ function RoadmapChat({ token, itemId }) {
         )}
         {messages?.map((m, i) => (
           <div key={i} className={`chat-bubble chat-bubble-${m.role}`}>
-            <span className="chat-bubble-role">{m.role === "user" ? "YOU" : "MENTOR"}</span>
+            <span className="chat-bubble-role">{m.role === "user" ? "You" : "Mentor"}</span>
             <p>{m.content}</p>
           </div>
         ))}
         {sending && (
           <div className="chat-bubble chat-bubble-assistant chat-bubble-pending">
-            <span className="chat-bubble-role">MENTOR</span>
+            <span className="chat-bubble-role">Mentor</span>
             <p>thinking…</p>
           </div>
         )}
@@ -1001,7 +1029,7 @@ function RoadmapChat({ token, itemId }) {
       <form className="chat-input-row" onSubmit={send}>
         <input
           className="gos-input"
-          placeholder="Ask a doubt about this topic…"
+          placeholder="Ask a doubt about this topic…" aria-label="Ask a doubt about this topic…"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={sending}
@@ -1011,7 +1039,7 @@ function RoadmapChat({ token, itemId }) {
           type="submit"
           disabled={sending || !input.trim()}
         >
-          {sending ? "…" : "ASK"}
+          {sending ? "…" : "Ask"}
         </button>
       </form>
     </div>
@@ -1022,17 +1050,23 @@ function RoadmapChat({ token, itemId }) {
 
 function RoadmapSidePanel({ item, token, guidePayload, guideLoading, guideError, updating, onStatusChange, onClose }) {
   const [tab, setTab] = useState("guide");
+  const panelRef = useRef(null);
 
   useEffect(() => {
     setTab("guide");
+    // below ~1080px the panel sits under the list, so bring it into view
+    if (window.matchMedia("(max-width: 1080px)").matches) {
+      const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      panelRef.current?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+    }
   }, [item.id]);
 
   return (
-    <div className="gos-panel terminal-panel side-panel">
+    <div className="gos-panel terminal-panel side-panel" ref={panelRef}>
       <div className="terminal-head">
-        <span className="terminal-dot" /> item.workspace
+        <span className="section-title">Learn this topic</span>
         <button className="gos-btn gos-btn-ghost guide-close" type="button" onClick={onClose}>
-          CLOSE
+          Close
         </button>
       </div>
       <h2 className="guide-title">{item.title}</h2>
@@ -1045,14 +1079,14 @@ function RoadmapSidePanel({ item, token, guidePayload, guideLoading, guideError,
           className={`filter-chip ${tab === "guide" ? "active" : ""}`}
           onClick={() => setTab("guide")}
         >
-          GUIDE
+          Guide
         </button>
         <button
           type="button"
           className={`filter-chip ${tab === "chat" ? "active" : ""}`}
           onClick={() => setTab("chat")}
         >
-          ASK AI
+          Ask a question
         </button>
       </div>
 
@@ -1195,7 +1229,6 @@ function RoadmapView({ hasRecommendation, onSkillsSynced, initialCareerTitle, on
     return (
       <div className="gos-shell">
         <div>
-          <div className="gos-eyebrow">Learning path</div>
           <h1 className="gos-title">No roadmap yet</h1>
           <p className="gos-subtitle">
             {hasRecommendation
@@ -1208,7 +1241,7 @@ function RoadmapView({ hasRecommendation, onSkillsSynced, initialCareerTitle, on
 
         <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> roadmap.generate
+            <span className="section-title">Build your roadmap</span>
           </div>
           <p className="gos-empty-note" style={{ marginBottom: 18 }}>
             {hasRecommendation
@@ -1221,7 +1254,7 @@ function RoadmapView({ hasRecommendation, onSkillsSynced, initialCareerTitle, on
             disabled={!hasRecommendation || generating}
             onClick={() => generate(false)}
           >
-            {generating ? "BUILDING…" : "GENERATE ROADMAP"}
+            {generating ? "Building…" : "Build my roadmap"}
           </button>
         </div>
       </div>
@@ -1231,11 +1264,10 @@ function RoadmapView({ hasRecommendation, onSkillsSynced, initialCareerTitle, on
   return (
     <div className="gos-shell gos-shell-flow">
       <div>
-        <div className="gos-eyebrow">Learning path</div>
         <h1 className="gos-title">{roadmap.career_title}</h1>
         <p className="gos-subtitle">
-          Click a node to open it — how to learn it, resources, and an AI mentor for doubts.
-          Track progress from the side panel.
+          Pick a step to see how to learn it, find resources, and ask questions.
+          Update its status from the side panel.
         </p>
       </div>
 
@@ -1243,12 +1275,12 @@ function RoadmapView({ hasRecommendation, onSkillsSynced, initialCareerTitle, on
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> roadmap.progress
+          <span className="section-title">Your progress</span>
         </div>
         <CircuitTrack percent={roadmap.progress_percent} />
         <div style={{ marginTop: 16, textAlign: "right" }}>
           <button className="gos-btn gos-btn-ghost" onClick={() => generate(true, roadmap.career_title)} disabled={generating}>
-            {generating ? "REBUILDING…" : "REGENERATE ROADMAP"}
+            {generating ? "Rebuilding…" : "Rebuild roadmap"}
           </button>
         </div>
       </div>
@@ -1256,14 +1288,14 @@ function RoadmapView({ hasRecommendation, onSkillsSynced, initialCareerTitle, on
       <div className="flow-layout">
         <div className="gos-panel terminal-panel flow-canvas-wrap">
           <div className="terminal-head">
-            <span className="terminal-dot" /> roadmap.flow
+            <span className="section-title">Your path, step by step</span>
           </div>
           <div className="flow-canvas">
             {roadmap.phases.map((phase) => (
               <div className="flow-phase" key={phase.phase_number}>
                 <div className="flow-phase-marker">
                   <span className="flow-phase-num">
-                    PHASE {String(phase.phase_number).padStart(2, "0")}
+                    Phase {phase.phase_number}
                   </span>
                   <span className="flow-phase-title">{phase.phase_title}</span>
                 </div>
@@ -1302,7 +1334,7 @@ function RoadmapView({ hasRecommendation, onSkillsSynced, initialCareerTitle, on
           ) : (
             <div className="gos-panel terminal-panel flow-side-empty">
               <div className="terminal-head">
-                <span className="terminal-dot" /> item.workspace
+                <span className="section-title">Learn this topic</span>
               </div>
               <p className="gos-empty-note">
                 Select a node on the left to see how to learn it, track progress, or ask the AI
@@ -1437,7 +1469,7 @@ function SkillsView({ refreshKey }) {
             disabled={deletingId === s.id}
             onClick={() => removeSkill(s.id)}
           >
-            {deletingId === s.id ? "…" : "REMOVE"}
+            {deletingId === s.id ? "…" : "Remove"}
           </button>
         )}
       </div>
@@ -1447,7 +1479,6 @@ function SkillsView({ refreshKey }) {
   return (
     <div className="gos-shell">
       <div>
-        <div className="gos-eyebrow">Skill tracker</div>
         <h1 className="gos-title">Skills</h1>
         <p className="gos-subtitle">
           Roadmap items land here automatically, grouped by phase. Add anything else you're
@@ -1459,53 +1490,53 @@ function SkillsView({ refreshKey }) {
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> skills.summary
+          <span className="section-title">Where you stand</span>
         </div>
         <CircuitTrack percent={dash?.average_percent ?? 0} />
         <div className="stat-inline-row">
           <div className="stat-inline">
             <span className="stat-inline-val">{dash?.total_skills ?? 0}</span>
-            <span className="stat-inline-key">TRACKED</span>
+            <span className="stat-inline-key">Tracked</span>
           </div>
           <div className="stat-inline">
             <span className="stat-inline-val">{inProgress}</span>
-            <span className="stat-inline-key">IN PROGRESS</span>
+            <span className="stat-inline-key">In progress</span>
           </div>
           <div className="stat-inline">
             <span className="stat-inline-val">{dash?.completed_skills ?? 0}</span>
-            <span className="stat-inline-key">COMPLETED</span>
+            <span className="stat-inline-key">Completed</span>
           </div>
         </div>
       </div>
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> add_skill
+          <span className="section-title">Add a skill</span>
         </div>
         <form className="skill-add-form" onSubmit={addSkill}>
           <input
             className="gos-input"
-            placeholder="e.g. Docker, System Design, DSA…"
+            placeholder="e.g. Docker, System Design, DSA…" aria-label="Skill name"
             value={newSkill}
             onChange={(e) => setNewSkill(e.target.value)}
           />
           <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} disabled={adding || !newSkill.trim()}>
-            {adding ? "ADDING…" : "ADD"}
+            {adding ? "Adding…" : "Add"}
           </button>
         </form>
       </div>
 
       {skills.length > 0 && (
-        <div className="gos-nav-links" style={{ marginBottom: 4 }}>
+        <div className="filter-row" style={{ marginBottom: 4 }}>
           {[
-            { key: "all", label: "ALL" },
-            { key: "in_progress", label: "IN PROGRESS" },
-            { key: "completed", label: "COMPLETED" },
+            { key: "all", label: "All" },
+            { key: "in_progress", label: "In progress" },
+            { key: "completed", label: "Completed" },
           ].map((f) => (
             <button
               key={f.key}
               type="button"
-              className={`gos-nav-btn ${filter === f.key ? "active" : ""}`}
+              className={`filter-chip ${filter === f.key ? "active" : ""}`}
               onClick={() => setFilter(f.key)}
             >
               {f.label}
@@ -1517,7 +1548,7 @@ function SkillsView({ refreshKey }) {
       {skills.length === 0 ? (
         <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> skills.list
+            <span className="section-title">Your skills</span>
           </div>
           <p className="gos-empty-note" style={{ marginBottom: 0 }}>
             No skills yet — generate a roadmap for an AI-built list, or add one above.
@@ -1527,7 +1558,7 @@ function SkillsView({ refreshKey }) {
         <>
           <div className="gos-panel terminal-panel">
             <div className="terminal-head">
-              <span className="terminal-dot" /> skills.from_roadmap
+              <span className="section-title">From your roadmap</span>
             </div>
             {phaseOrder.length === 0 ? (
               <p className="gos-empty-note" style={{ marginBottom: 0 }}>
@@ -1549,7 +1580,7 @@ function SkillsView({ refreshKey }) {
 
           <div className="gos-panel terminal-panel">
             <div className="terminal-head">
-              <span className="terminal-dot" /> skills.self_added
+              <span className="section-title">Added by you</span>
             </div>
             {manualSkills.length === 0 ? (
               <p className="gos-empty-note" style={{ marginBottom: 0 }}>
@@ -1664,7 +1695,6 @@ function JobsView({ onChanged }) {
   return (
     <div className="gos-shell gos-shell-wide">
       <div>
-        <div className="gos-eyebrow">Pipeline</div>
         <h1 className="gos-title">Job tracker</h1>
         <p className="gos-subtitle">
           Wishlist internships and roles, then walk them through OA → interview → offer.
@@ -1679,7 +1709,7 @@ function JobsView({ onChanged }) {
           className={`filter-chip ${filter === "all" ? "active" : ""}`}
           onClick={() => setFilter("all")}
         >
-          ALL {jobs.length}
+          All {jobs.length}
         </button>
         {JOB_STATUSES.map((s) => (
           <button
@@ -1695,14 +1725,14 @@ function JobsView({ onChanged }) {
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> add.application
+          <span className="section-title">Add an application</span>
         </div>
         <form className="job-form" onSubmit={submit}>
-          <input className="gos-input" placeholder="Company" value={form.company} onChange={update("company")} required />
-          <input className="gos-input" placeholder="Role" value={form.role} onChange={update("role")} required />
-          <input className="gos-input" placeholder="Location / Remote" value={form.location} onChange={update("location")} />
-          <input className="gos-input" placeholder="Source (LinkedIn, Naukri…)" value={form.source} onChange={update("source")} />
-          <input className="gos-input" placeholder="Posting URL" value={form.url} onChange={update("url")} />
+          <input className="gos-input" placeholder="Company" aria-label="Company" value={form.company} onChange={update("company")} required />
+          <input className="gos-input" placeholder="Role" aria-label="Role" value={form.role} onChange={update("role")} required />
+          <input className="gos-input" placeholder="Location / Remote" aria-label="Location / Remote" value={form.location} onChange={update("location")} />
+          <input className="gos-input" placeholder="Source (LinkedIn, Naukri…)" aria-label="Source (LinkedIn, Naukri…)" value={form.source} onChange={update("source")} />
+          <input className="gos-input" placeholder="Posting URL" aria-label="Posting URL" value={form.url} onChange={update("url")} />
           <select className="gos-input" value={form.status} onChange={update("status")}>
             {JOB_STATUSES.map((s) => (
               <option key={s} value={s}>
@@ -1710,16 +1740,16 @@ function JobsView({ onChanged }) {
               </option>
             ))}
           </select>
-          <input className="gos-input job-notes" placeholder="Notes" value={form.notes} onChange={update("notes")} />
+          <input className="gos-input job-notes" placeholder="Notes" aria-label="Notes" value={form.notes} onChange={update("notes")} />
           <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} disabled={saving}>
-            {saving ? "ADDING…" : "ADD"}
+            {saving ? "Adding…" : "Add"}
           </button>
         </form>
       </div>
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> applications.list
+          <span className="section-title">Your applications</span>
         </div>
         {visible.length === 0 ? (
           <p className="gos-empty-note" style={{ marginBottom: 0 }}>
@@ -1734,10 +1764,10 @@ function JobsView({ onChanged }) {
                 </div>
                 <div className="roadmap-item-desc">
                   {[job.location, job.source].filter(Boolean).join(" · ")}
-                  {job.url && (
+                  {safeUrl(job.url) && (
                     <>
                       {" · "}
-                      <a href={job.url} target="_blank" rel="noreferrer">
+                      <a href={safeUrl(job.url)} target="_blank" rel="noreferrer">
                         posting
                       </a>
                     </>
@@ -1757,7 +1787,7 @@ function JobsView({ onChanged }) {
                 ))}
               </select>
               <button type="button" className="gos-btn gos-btn-ghost" onClick={() => remove(job.id)}>
-                REMOVE
+                Remove
               </button>
             </div>
           ))
@@ -1773,9 +1803,9 @@ function JobsView({ onChanged }) {
 
 const INTERVIEW_CAT_LABEL = {
   dsa: "DSA",
-  system_design: "SYSTEM DESIGN",
-  domain: "DOMAIN",
-  behavioral: "BEHAVIORAL",
+  system_design: "System design",
+  domain: "Domain",
+  behavioral: "Behavioral",
   hr: "HR",
 };
 
@@ -1854,7 +1884,6 @@ function InterviewView({ hasRecommendation, onChanged }) {
     return (
       <div className="gos-shell">
         <div>
-          <div className="gos-eyebrow">Interview lab</div>
           <h1 className="gos-title">No prep set yet</h1>
           <p className="gos-subtitle">
             {hasRecommendation
@@ -1870,7 +1899,7 @@ function InterviewView({ hasRecommendation, onChanged }) {
             disabled={!hasRecommendation || generating}
             onClick={() => generate(false)}
           >
-            {generating ? "BUILDING…" : "GENERATE INTERVIEW PREP"}
+            {generating ? "Building…" : "Build my interview prep"}
           </button>
         </div>
       </div>
@@ -1883,7 +1912,6 @@ function InterviewView({ hasRecommendation, onChanged }) {
   return (
     <div className="gos-shell gos-shell-wide">
       <div>
-        <div className="gos-eyebrow">Interview lab</div>
         <h1 className="gos-title">{prep.career_title || "Interview prep"}</h1>
         <p className="gos-subtitle">
           Work the bank out loud. Open a question for hints and talking points, then mark it nailed when it's clean.
@@ -1894,26 +1922,26 @@ function InterviewView({ hasRecommendation, onChanged }) {
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> prep.progress
+          <span className="section-title">Your prep so far</span>
         </div>
         <CircuitTrack percent={prep.progress_percent} />
         <div className="stat-inline-row">
           <div className="stat-inline">
             <span className="stat-inline-val">{prep.total}</span>
-            <span className="stat-inline-key">QUESTIONS</span>
+            <span className="stat-inline-key">Questions</span>
           </div>
           <div className="stat-inline">
             <span className="stat-inline-val">{prep.practicing}</span>
-            <span className="stat-inline-key">IN PLAY</span>
+            <span className="stat-inline-key">In progress</span>
           </div>
           <div className="stat-inline">
             <span className="stat-inline-val">{prep.nailed}</span>
-            <span className="stat-inline-key">NAILED</span>
+            <span className="stat-inline-key">Nailed it</span>
           </div>
         </div>
         <div style={{ marginTop: 16, textAlign: "right" }}>
           <button className="gos-btn gos-btn-ghost" onClick={() => generate(true)} disabled={generating}>
-            {generating ? "REBUILDING…" : "REGENERATE PREP"}
+            {generating ? "Rebuilding…" : "Rebuild prep"}
           </button>
         </div>
       </div>
@@ -1926,7 +1954,7 @@ function InterviewView({ hasRecommendation, onChanged }) {
             className={`filter-chip ${category === c ? "active" : ""}`}
             onClick={() => setCategory(c)}
           >
-            {c === "all" ? "ALL" : INTERVIEW_CAT_LABEL[c]}
+            {c === "all" ? "All" : INTERVIEW_CAT_LABEL[c]}
           </button>
         ))}
       </div>
@@ -2062,7 +2090,7 @@ function BulletsEditor({ bullets, onChange }) {
           <input
             className="gos-input"
             value={b}
-            placeholder="Impact-driven bullet — what you did, and the result"
+            placeholder="Impact-driven bullet — what you did, and the result" aria-label="Impact-driven bullet — what you did, and the result"
             onChange={(e) => update(i, e.target.value)}
           />
           {bullets.length > 1 && (
@@ -2128,18 +2156,18 @@ function ResumeBuilderForm({ initial, onSaved }) {
   return (
     <form onSubmit={submit} className="gos-panel terminal-panel">
       <div className="terminal-head">
-        <span className="terminal-dot" /> resume.builder
+        <span className="section-title">Build a resume</span>
       </div>
       <Alert>{error}</Alert>
 
       <div className="job-form">
-        <input className="gos-input" placeholder="Full name" value={form.full_name} onChange={setField("full_name")} required />
-        <input className="gos-input" placeholder="Email" value={form.email} onChange={setField("email")} required />
-        <input className="gos-input" placeholder="Phone" value={form.phone} onChange={setField("phone")} />
-        <input className="gos-input" placeholder="Location (city, state)" value={form.location} onChange={setField("location")} />
-        <input className="gos-input" placeholder="LinkedIn URL" value={form.linkedin} onChange={setField("linkedin")} />
-        <input className="gos-input" placeholder="GitHub URL" value={form.github} onChange={setField("github")} />
-        <input className="gos-input job-notes" placeholder="Portfolio URL" value={form.portfolio} onChange={setField("portfolio")} />
+        <input className="gos-input" placeholder="Full name" aria-label="Full name" value={form.full_name} onChange={setField("full_name")} required />
+        <input className="gos-input" placeholder="Email" aria-label="Email" value={form.email} onChange={setField("email")} required />
+        <input className="gos-input" placeholder="Phone" aria-label="Phone" value={form.phone} onChange={setField("phone")} />
+        <input className="gos-input" placeholder="Location (city, state)" aria-label="Location (city, state)" value={form.location} onChange={setField("location")} />
+        <input className="gos-input" placeholder="LinkedIn URL" aria-label="LinkedIn URL" value={form.linkedin} onChange={setField("linkedin")} />
+        <input className="gos-input" placeholder="GitHub URL" aria-label="GitHub URL" value={form.github} onChange={setField("github")} />
+        <input className="gos-input job-notes" placeholder="Portfolio URL" aria-label="Portfolio URL" value={form.portfolio} onChange={setField("portfolio")} />
       </div>
 
       <div className="gos-field" style={{ marginTop: 16 }}>
@@ -2147,7 +2175,7 @@ function ResumeBuilderForm({ initial, onSaved }) {
         <textarea
           className="gos-input"
           rows={3}
-          placeholder="2-3 lines on who you are and what you're aiming for"
+          placeholder="2-3 lines on who you are and what you're aiming for" aria-label="2-3 lines on who you are and what you're aiming for"
           value={form.summary}
           onChange={setField("summary")}
         />
@@ -2159,32 +2187,32 @@ function ResumeBuilderForm({ initial, onSaved }) {
           <div className="job-form">
             <input
               className="gos-input"
-              placeholder="Degree (e.g. BCA - Data Science)"
+              placeholder="Degree (e.g. BCA - Data Science)" aria-label="Degree (e.g. BCA - Data Science)"
               value={ed.degree}
               onChange={(e) => updateEntry("education", i, { degree: e.target.value })}
             />
             <input
               className="gos-input"
-              placeholder="Institution"
+              placeholder="Institution" aria-label="Institution"
               value={ed.institution}
               onChange={(e) => updateEntry("education", i, { institution: e.target.value })}
             />
             <input
               className="gos-input"
-              placeholder="Dates (e.g. 2023 - 2027)"
+              placeholder="Dates (e.g. 2023 - 2027)" aria-label="Dates (e.g. 2023 - 2027)"
               value={ed.dates}
               onChange={(e) => updateEntry("education", i, { dates: e.target.value })}
             />
             <input
               className="gos-input"
-              placeholder="CGPA / details (optional)"
+              placeholder="CGPA / details (optional)" aria-label="CGPA / details (optional)"
               value={ed.details}
               onChange={(e) => updateEntry("education", i, { details: e.target.value })}
             />
           </div>
           {form.education.length > 1 && (
             <button type="button" className="gos-btn gos-btn-ghost" onClick={() => removeEntry("education", i)}>
-              REMOVE
+              Remove
             </button>
           )}
         </div>
@@ -2201,19 +2229,19 @@ function ResumeBuilderForm({ initial, onSaved }) {
           <div className="job-form">
             <input
               className="gos-input"
-              placeholder="Role / title"
+              placeholder="Role / title" aria-label="Role / title"
               value={ex.role}
               onChange={(e) => updateEntry("experience", i, { role: e.target.value })}
             />
             <input
               className="gos-input"
-              placeholder="Company"
+              placeholder="Company" aria-label="Company"
               value={ex.company}
               onChange={(e) => updateEntry("experience", i, { company: e.target.value })}
             />
             <input
               className="gos-input job-notes"
-              placeholder="Dates (e.g. Jun 2025 - Aug 2025)"
+              placeholder="Dates (e.g. Jun 2025 - Aug 2025)" aria-label="Dates (e.g. Jun 2025 - Aug 2025)"
               value={ex.dates}
               onChange={(e) => updateEntry("experience", i, { dates: e.target.value })}
             />
@@ -2221,7 +2249,7 @@ function ResumeBuilderForm({ initial, onSaved }) {
           <BulletsEditor bullets={ex.bullets} onChange={(bullets) => updateEntry("experience", i, { bullets })} />
           {form.experience.length > 1 && (
             <button type="button" className="gos-btn gos-btn-ghost" onClick={() => removeEntry("experience", i)}>
-              REMOVE
+              Remove
             </button>
           )}
         </div>
@@ -2238,13 +2266,13 @@ function ResumeBuilderForm({ initial, onSaved }) {
           <div className="job-form">
             <input
               className="gos-input"
-              placeholder="Project title"
+              placeholder="Project title" aria-label="Project title"
               value={p.title}
               onChange={(e) => updateEntry("projects", i, { title: e.target.value })}
             />
             <input
               className="gos-input job-notes"
-              placeholder="Tech stack"
+              placeholder="Tech stack" aria-label="Tech stack"
               value={p.tech}
               onChange={(e) => updateEntry("projects", i, { tech: e.target.value })}
             />
@@ -2252,7 +2280,7 @@ function ResumeBuilderForm({ initial, onSaved }) {
           <BulletsEditor bullets={p.bullets} onChange={(bullets) => updateEntry("projects", i, { bullets })} />
           {form.projects.length > 1 && (
             <button type="button" className="gos-btn gos-btn-ghost" onClick={() => removeEntry("projects", i)}>
-              REMOVE
+              Remove
             </button>
           )}
         </div>
@@ -2277,7 +2305,7 @@ function ResumeBuilderForm({ initial, onSaved }) {
       </div>
 
       <button className="gos-btn gos-btn-primary" style={{ width: "auto", marginTop: 8 }} disabled={saving}>
-        {saving ? "SAVING…" : "SAVE RESUME"}
+        {saving ? "Saving…" : "Save resume"}
       </button>
     </form>
   );
@@ -2308,7 +2336,7 @@ function ResumeUploadPanel({ onUploaded }) {
   return (
     <form onSubmit={submit} className="gos-panel terminal-panel">
       <div className="terminal-head">
-        <span className="terminal-dot" /> resume.upload
+        <span className="section-title">Upload your resume</span>
       </div>
       <Alert>{error}</Alert>
       <p className="gos-empty-note" style={{ marginBottom: 12 }}>
@@ -2322,7 +2350,7 @@ function ResumeUploadPanel({ onUploaded }) {
         onChange={(e) => setFile(e.target.files?.[0] || null)}
       />
       <button className="gos-btn gos-btn-primary" style={{ width: "auto", marginTop: 12 }} disabled={!file || uploading}>
-        {uploading ? "UPLOADING…" : "UPLOAD RESUME"}
+        {uploading ? "Uploading…" : "Upload resume"}
       </button>
     </form>
   );
@@ -2361,7 +2389,7 @@ function ResumeTailorPanel() {
   return (
     <div className="gos-panel terminal-panel">
       <div className="terminal-head">
-        <span className="terminal-dot" /> tailor_to_jd
+        <span className="section-title">Tailor to a job post</span>
       </div>
       <Alert>{error}</Alert>
       <p className="gos-empty-note" style={{ marginBottom: 12 }}>
@@ -2372,18 +2400,18 @@ function ResumeTailorPanel() {
         <textarea
           className="gos-input rec-feedback-input"
           rows={5}
-          placeholder="Paste the job description here…"
+          placeholder="Paste the job description here…" aria-label="Paste the job description here…"
           value={jd}
           onChange={(e) => setJd(e.target.value)}
           disabled={working}
         />
         <div className="rec-actions-row">
           <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} disabled={working || !jd.trim()}>
-            {working ? "TAILORING…" : "TAILOR RESUME"}
+            {working ? "Tailoring…" : "Tailor resume"}
           </button>
           {tailored && (
             <button type="button" className="gos-btn gos-btn-ghost" onClick={download}>
-              DOWNLOAD TAILORED .DOCX
+              Download tailored .docx
             </button>
           )}
         </div>
@@ -2422,7 +2450,7 @@ function AtsCheckPanel() {
   return (
     <div className="gos-panel terminal-panel">
       <div className="terminal-head">
-        <span className="terminal-dot" /> ats_checker
+        <span className="section-title">Check your ATS score</span>
       </div>
       <Alert>{error}</Alert>
       <p className="gos-empty-note" style={{ marginBottom: 12 }}>
@@ -2433,13 +2461,13 @@ function AtsCheckPanel() {
         <textarea
           className="gos-input rec-feedback-input"
           rows={4}
-          placeholder="Job description (optional)…"
+          placeholder="Job description (optional)…" aria-label="Job description (optional)…"
           value={jd}
           onChange={(e) => setJd(e.target.value)}
           disabled={working}
         />
         <button className="gos-btn gos-btn-primary" style={{ width: "auto", marginTop: 12 }} disabled={working}>
-          {working ? "CHECKING…" : "CHECK ATS SCORE"}
+          {working ? "Checking…" : "Check ATS score"}
         </button>
       </form>
 
@@ -2448,7 +2476,7 @@ function AtsCheckPanel() {
           <div className="stat-inline-row" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
             <div className="stat-inline">
               <span className="stat-inline-val">{result.ats_score}</span>
-              <span className="stat-inline-key">ATS SCORE / 100</span>
+              <span className="stat-inline-key">ATS score out of 100</span>
             </div>
           </div>
           <p className="guide-summary">{result.verdict}</p>
@@ -2558,30 +2586,30 @@ function CoverLetterPanel() {
   return (
     <div className="gos-panel terminal-panel">
       <div className="terminal-head">
-        <span className="terminal-dot" /> cover_letter
+        <span className="section-title">Cover letter</span>
       </div>
       <Alert>{error}</Alert>
       <form onSubmit={generate}>
         <div className="job-form">
-          <input className="gos-input" placeholder="Company" value={company} onChange={(e) => setCompany(e.target.value)} />
-          <input className="gos-input" placeholder="Role" value={role} onChange={(e) => setRole(e.target.value)} />
+          <input className="gos-input" placeholder="Company" aria-label="Company" value={company} onChange={(e) => setCompany(e.target.value)} />
+          <input className="gos-input" placeholder="Role" aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)} />
         </div>
         <textarea
           className="gos-input rec-feedback-input"
           rows={5}
           style={{ marginTop: 10 }}
-          placeholder="Paste the job description here…"
+          placeholder="Paste the job description here…" aria-label="Paste the job description here…"
           value={jd}
           onChange={(e) => setJd(e.target.value)}
           disabled={working}
         />
         <div className="rec-actions-row">
           <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} disabled={working || !jd.trim()}>
-            {working ? "WRITING…" : "GENERATE COVER LETTER"}
+            {working ? "Writing…" : "Write cover letter"}
           </button>
           {letter && (
             <button type="button" className="gos-btn gos-btn-ghost" onClick={copy}>
-              COPY TO CLIPBOARD
+              Copy to clipboard
             </button>
           )}
         </div>
@@ -2596,10 +2624,10 @@ function CoverLetterPanel() {
 }
 
 const RESUME_TABS = [
-  { key: "overview", label: "OVERVIEW" },
-  { key: "tailor", label: "TAILOR TO JD" },
-  { key: "ats", label: "ATS CHECKER" },
-  { key: "cover", label: "COVER LETTER" },
+  { key: "overview", label: "Overview" },
+  { key: "tailor", label: "Tailor to a job post" },
+  { key: "ats", label: "ATS check" },
+  { key: "cover", label: "Cover letter" },
 ];
 
 function ResumeView() {
@@ -2638,7 +2666,7 @@ function ResumeView() {
   if (resume === undefined) {
     return (
       <div className="gos-loading">
-        <span className="gos-spinner" /> Loading resume studio…
+        <span className="gos-spinner" /> Loading your resume…
       </div>
     );
   }
@@ -2646,7 +2674,6 @@ function ResumeView() {
   return (
     <div className="gos-shell gos-shell-wide">
       <div>
-        <div className="gos-eyebrow">Resume studio</div>
         <h1 className="gos-title">Resume, cover letters & ATS</h1>
         <p className="gos-subtitle">
           Build an ATS-friendly resume from scratch, or upload one you already have — then
@@ -2660,7 +2687,7 @@ function ResumeView() {
       {!resume && mode === null && (
         <div className="gos-panel terminal-panel">
           <div className="terminal-head">
-            <span className="terminal-dot" /> get_started
+            <span className="section-title">Where to begin</span>
           </div>
           <p className="gos-empty-note" style={{ marginBottom: 16 }}>
             No resume on file yet. Build one with GrindOS's ATS-friendly template, or upload
@@ -2668,10 +2695,10 @@ function ResumeView() {
           </p>
           <div className="rec-actions-row">
             <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={() => setMode("build")}>
-              BUILD MY FIRST RESUME
+              Build my first resume
             </button>
             <button className="gos-btn gos-btn-ghost" onClick={() => setMode("upload")}>
-              UPLOAD AN EXISTING RESUME
+              Upload an existing resume
             </button>
           </div>
         </div>
@@ -2717,16 +2744,16 @@ function ResumeView() {
           {tab === "overview" && (
             <div className="gos-panel terminal-panel">
               <div className="terminal-head">
-                <span className="terminal-dot" /> resume.current
+                <span className="section-title">Your current resume</span>
               </div>
               <div className="terminal-row">
-                <span className="terminal-row-key">SOURCE</span>
+                <span className="terminal-row-key">Source</span>
                 <span className="terminal-row-val">
                   {resume.source === "built" ? "Built in GrindOS" : "Uploaded"}
                 </span>
               </div>
               <div className="terminal-row">
-                <span className="terminal-row-key">TITLE / FILE</span>
+                <span className="terminal-row-key">Title or file</span>
                 <span className="terminal-row-val">{resume.file_name || resume.title}</span>
               </div>
               <div style={{ marginTop: 16 }}>
@@ -2736,14 +2763,14 @@ function ResumeView() {
               <div className="rec-actions-row" style={{ marginTop: 16 }}>
                 {resume.source === "built" && (
                   <button className="gos-btn gos-btn-primary" style={{ width: "auto" }} onClick={download}>
-                    DOWNLOAD AS .DOCX
+                    Download as .docx
                   </button>
                 )}
                 <button className="gos-btn gos-btn-ghost" onClick={() => setMode("build")}>
-                  {resume.source === "built" ? "EDIT BUILT RESUME" : "BUILD ONE INSTEAD"}
+                  {resume.source === "built" ? "Edit built resume" : "Build one instead"}
                 </button>
                 <button className="gos-btn gos-btn-ghost" onClick={() => setMode("upload")}>
-                  REPLACE WITH UPLOAD
+                  Replace with upload
                 </button>
               </div>
             </div>
@@ -2834,7 +2861,6 @@ function MockInterviewView({ hasRecommendation }) {
     return (
       <div className="gos-shell">
         <div>
-          <div className="gos-eyebrow">Mock interview</div>
           <h1 className="gos-title">No mock interview set yet</h1>
           <p className="gos-subtitle">
             {hasRecommendation
@@ -2850,7 +2876,7 @@ function MockInterviewView({ hasRecommendation }) {
             disabled={!hasRecommendation || generating}
             onClick={() => generate(false)}
           >
-            {generating ? "BUILDING…" : "GENERATE MOCK INTERVIEW"}
+            {generating ? "Building…" : "Build my mock interview"}
           </button>
         </div>
       </div>
@@ -2860,7 +2886,6 @@ function MockInterviewView({ hasRecommendation }) {
   return (
     <div className="gos-shell gos-shell-wide">
       <div>
-        <div className="gos-eyebrow">Mock interview</div>
         <h1 className="gos-title">{session.career_title || "Mock interview"}</h1>
         <p className="gos-subtitle">
           Answer each question in your own words, then submit for direct feedback — strengths,
@@ -2872,21 +2897,21 @@ function MockInterviewView({ hasRecommendation }) {
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> mock.progress
+          <span className="section-title">Your practice so far</span>
         </div>
         <div className="stat-inline-row" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
           <div className="stat-inline">
             <span className="stat-inline-val">{session.total}</span>
-            <span className="stat-inline-key">QUESTIONS</span>
+            <span className="stat-inline-key">Questions</span>
           </div>
           <div className="stat-inline">
             <span className="stat-inline-val">{session.answered}</span>
-            <span className="stat-inline-key">ANSWERED</span>
+            <span className="stat-inline-key">Answered</span>
           </div>
         </div>
         <div style={{ marginTop: 16, textAlign: "right" }}>
           <button className="gos-btn gos-btn-ghost" onClick={() => generate(true)} disabled={generating}>
-            {generating ? "REBUILDING…" : "REGENERATE"}
+            {generating ? "Rebuilding…" : "Rebuild"}
           </button>
         </div>
       </div>
@@ -2900,7 +2925,7 @@ function MockInterviewView({ hasRecommendation }) {
             <textarea
               className="gos-input rec-feedback-input"
               rows={4}
-              placeholder="Type your answer here…"
+              placeholder="Type your answer here…" aria-label="Type your answer here…"
               value={answers[q.id] ?? q.user_answer ?? ""}
               onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
               disabled={submittingId === q.id}
@@ -2913,10 +2938,10 @@ function MockInterviewView({ hasRecommendation }) {
               onClick={() => submitAnswer(q.id)}
             >
               {submittingId === q.id
-                ? "GETTING FEEDBACK…"
+                ? "Getting feedback…"
                 : q.status === "answered"
-                  ? "RE-SUBMIT ANSWER"
-                  : "SUBMIT ANSWER"}
+                  ? "Re-submit answer"
+                  : "Submit answer"}
             </button>
           </div>
 
@@ -2925,7 +2950,7 @@ function MockInterviewView({ hasRecommendation }) {
               <div className="stat-inline-row" style={{ marginTop: 0, paddingTop: 0, borderTop: "none" }}>
                 <div className="stat-inline">
                   <span className="stat-inline-val">{q.feedback.score}/10</span>
-                  <span className="stat-inline-key">SCORE</span>
+                  <span className="stat-inline-key">Score</span>
                 </div>
               </div>
               {q.feedback.strengths?.length > 0 && (
@@ -2976,14 +3001,14 @@ function slugifyKey(text) {
 }
 
 const ADMIN_STAT_LABELS = [
-  ["users", "USERS"],
-  ["admins", "ADMINS"],
-  ["assessments_taken", "ASSESSMENTS"],
-  ["recommendations", "RECOMMENDATIONS"],
-  ["resumes", "RESUMES"],
-  ["job_applications", "JOB APPLICATIONS"],
-  ["mock_interview_sessions", "MOCK SESSIONS"],
-  ["questions_active", "ACTIVE QUESTIONS"],
+  ["users", "Users"],
+  ["admins", "Admins"],
+  ["assessments_taken", "Assessments taken"],
+  ["recommendations", "Recommendations"],
+  ["resumes", "Resumes"],
+  ["job_applications", "Job applications"],
+  ["mock_interview_sessions", "Mock sessions"],
+  ["questions_active", "Active questions"],
 ];
 
 function AdminOverview() {
@@ -3175,19 +3200,19 @@ function AdminQuestions() {
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> add.question
+          <span className="section-title">Add a question</span>
         </div>
         <form className="admin-form" onSubmit={create}>
           <input
             className="gos-input"
-            placeholder="Question text"
+            placeholder="Question text" aria-label="Question text"
             value={form.question}
             onChange={(e) => setForm((f) => ({ ...f, question: e.target.value }))}
             required
           />
           <input
             className="gos-input"
-            placeholder="key (optional — auto-generated from the question)"
+            placeholder="key (optional — auto-generated from the question)" aria-label="key (optional — auto-generated from the question)"
             value={form.key}
             onChange={(e) => setForm((f) => ({ ...f, key: e.target.value }))}
           />
@@ -3211,14 +3236,14 @@ function AdminQuestions() {
             style={{ width: "auto" }}
             disabled={creating}
           >
-            {creating ? "ADDING…" : "ADD QUESTION"}
+            {creating ? "Adding…" : "Add question"}
           </button>
         </form>
       </div>
 
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> questions.list
+          <span className="section-title">Questions</span>
         </div>
         {questions.length === 0 ? (
           <p className="gos-empty-note" style={{ marginBottom: 0 }}>
@@ -3259,14 +3284,14 @@ function AdminQuestions() {
                         disabled={busyId === q.id}
                         onClick={() => saveEdit(q)}
                       >
-                        SAVE
+                        Save
                       </button>
                       <button
                         type="button"
                         className="gos-btn gos-btn-ghost"
                         onClick={() => setEditingId(null)}
                       >
-                        CANCEL
+                        Cancel
                       </button>
                     </div>
                   </div>
@@ -3274,7 +3299,7 @@ function AdminQuestions() {
                   <>
                     <div className="roadmap-item-title">
                       {q.question}
-                      {!q.is_active && <span className="admin-badge hidden">HIDDEN</span>}
+                      {!q.is_active && <span className="admin-badge hidden">Hidden</span>}
                     </div>
                     <div className="roadmap-item-desc">
                       <span className="admin-key">{q.key}</span> · {q.options.join(" / ")}
@@ -3303,7 +3328,7 @@ function AdminQuestions() {
                     ↓
                   </button>
                   <button type="button" className="gos-btn gos-btn-ghost" onClick={() => startEdit(q)}>
-                    EDIT
+                    Edit
                   </button>
                   <button
                     type="button"
@@ -3311,7 +3336,7 @@ function AdminQuestions() {
                     disabled={busyId === q.id}
                     onClick={() => toggleActive(q)}
                   >
-                    {q.is_active ? "HIDE" : "SHOW"}
+                    {q.is_active ? "Hide" : "Show"}
                   </button>
                   <button
                     type="button"
@@ -3319,7 +3344,7 @@ function AdminQuestions() {
                     disabled={busyId === q.id}
                     onClick={() => remove(q)}
                   >
-                    DELETE
+                    Delete
                   </button>
                 </div>
               )}
@@ -3373,14 +3398,14 @@ function AdminUsers() {
       <Alert>{error}</Alert>
       <div className="gos-panel terminal-panel">
         <div className="terminal-head">
-          <span className="terminal-dot" /> users.list
+          <span className="section-title">Users</span>
         </div>
         {(users || []).map((u) => (
           <div className="job-row" key={u.id}>
             <div className="job-row-main">
               <div className="roadmap-item-title">
                 {u.name}
-                {u.role === "admin" && <span className="admin-badge">ADMIN</span>}
+                {u.role === "admin" && <span className="admin-badge">Admin</span>}
               </div>
               <div className="roadmap-item-desc">
                 {u.email} · {u.has_assessment ? "assessment done" : "no assessment yet"}
@@ -3392,7 +3417,7 @@ function AdminUsers() {
               disabled={u.id === me?.id || busyId === u.id}
               onClick={() => toggleRole(u)}
             >
-              {u.role === "admin" ? "REMOVE ADMIN" : "MAKE ADMIN"}
+              {u.role === "admin" ? "Remove admin" : "Make admin"}
             </button>
           </div>
         ))}
@@ -3404,15 +3429,14 @@ function AdminUsers() {
 function AdminView() {
   const [tab, setTab] = useState("overview");
   const tabs = [
-    ["overview", "OVERVIEW"],
-    ["questions", "QUESTIONS"],
-    ["users", "USERS"],
+    ["overview", "Overview"],
+    ["questions", "Questions"],
+    ["users", "Users"],
   ];
 
   return (
     <div className="gos-shell gos-shell-wide">
       <div>
-        <div className="gos-eyebrow">Control room</div>
         <h1 className="gos-title">Admin panel</h1>
         <p className="gos-subtitle">
           Manage the assessment, keep an eye on usage, and control who has admin access.
@@ -3476,14 +3500,14 @@ function Shell() {
     return (
       <div className="gos-main">
         <div className="gos-loading">
-          <span className="gos-spinner" /> Booting GrindOS…
+          <span className="gos-spinner" /> Loading…
         </div>
       </div>
     );
   }
 
   return (
-    <div className="gos-app">
+    <div className={`gos-app ${!token || !user ? "gos-app-guest" : ""}`}>
       <Navbar view={view} setView={setView} hasRecommendation={!!recommendation} />
       <div className="gos-main">
         {!token || !user ? (
