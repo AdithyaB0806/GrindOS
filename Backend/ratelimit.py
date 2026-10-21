@@ -89,7 +89,7 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-LOGIN_WINDOW = 600  # seconds
+LOGIN_WINDOW = 6000  # seconds
 
 
 def login_rate_limit(request: Request, email: str) -> None:

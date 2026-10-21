@@ -9,6 +9,7 @@ from Backend.assessment import router as assessment_router
 from Backend.dashboard import router as dashboard_router
 from Backend.database import Base, engine
 from Backend.interview import router as interview_router
+from Backend.jd_match import router as jd_match_router  # also registers the JDMatch table
 from Backend.jobs import router as jobs_router
 from Backend.mock_interview import router as mock_interview_router
 from Backend.resume import router as resume_router
@@ -41,11 +42,14 @@ app.include_router(jobs_router)
 app.include_router(interview_router)
 app.include_router(dashboard_router)
 app.include_router(resume_router)
+app.include_router(jd_match_router)
 app.include_router(mock_interview_router)
 app.include_router(admin_router)
 
 # Creates missing tables only; it never alters existing ones. Once the schema
 # starts changing in production, move to Alembic migrations.
+# Every module that defines a model (including jd_match.py) must be imported
+# above this line, or its table won't be created.
 Base.metadata.create_all(bind=engine)
 
 
